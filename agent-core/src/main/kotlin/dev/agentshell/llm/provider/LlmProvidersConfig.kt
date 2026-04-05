@@ -20,6 +20,7 @@ data class ProviderYaml(
     val threads: Int = 4,
     val maxTokens: Int = 4096,
     val temperature: Double = 0.7,
+    val appName: String? = null,
 )
 
 @Serializable
@@ -69,6 +70,8 @@ object LlmProvidersLoader {
                 "groq" -> dev.agentshell.llm.provider.impl.GroqProvider(okHttpClient, p)
                 "deepseek" -> dev.agentshell.llm.provider.impl.DeepSeekProvider(okHttpClient, p)
                 "llama_cpp" -> dev.agentshell.llm.provider.impl.LlamaCppProvider(p)
+                "openrouter" -> dev.agentshell.llm.provider.impl.OpenRouterProvider(okHttpClient, p)
+                "gemini" -> dev.agentshell.llm.provider.impl.GeminiProvider(okHttpClient, p)
                 else -> { log.warn("Unknown provider id: {}", p.id); null }
             }
             provider?.let { LlmProviderRegistry.register(it) }

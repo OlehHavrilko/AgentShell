@@ -7,7 +7,11 @@ import dev.agentshell.llm.provider.ProviderYaml
 import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
 
-/** Vertex AI via Gemini REST endpoint (no Google Auth library — uses API key or access token from env) */
+/**
+ * Vertex AI via the predict endpoint.
+ * Auth: uses GOOGLE_ACCESS_TOKEN env var (obtain via `gcloud auth print-access-token`
+ * or from a service account — no google-auth-library dependency needed).
+ */
 class VertexAiProvider(http: OkHttpClient, private val cfg: ProviderYaml) : BaseHttpProvider(http) {
     override val id = "vertex_ai"
     override val displayName = "Vertex AI (Gemini)"
@@ -15,24 +19,33 @@ class VertexAiProvider(http: OkHttpClient, private val cfg: ProviderYaml) : Base
     private val location get() = cfg.location ?: "us-central1"
     private val model get() = cfg.model ?: "gemini-1.5-flash"
     private val accessToken get() = System.getenv("GOOGLE_ACCESS_TOKEN") ?: ""
-    private val url get() = "https://$location-aiplatform.googleapis.com/v1/projects/$project/locations/$location/publishers/google/models/$model:generateContent"
+    private val url get() = "https://$location-aiplatform.googleapis.com/v1/projects/$project" +
+            "/locations/$location/publishers/google/models/$model:predict"
 
     override suspend fun complete(request: CompletionRequest): CompletionResponse {
-        val contents = buildJsonArray {
-            request.messages.filter { it.role != LlmMessage.Role.system }.forEach { msg ->
+        val contextMessages = request.messages.filter { it.role != LlmMessage.Role.system }
+        val sysPrompt = request.systemPrompt
+            ?: request.messages.firstOrNull { it.role == LlmMessage.Role.system }?.content
+
+        val messages = buildJsonArray {
+            sysPrompt?.let {
+                add(buildJsonObject { put("author", "system"); put("content", it) })
+            }
+            contextMessages.forEach { msg ->
                 add(buildJsonObject {
-                    put("role", if (msg.role == LlmMessage.Role.assistant) "model" else "user")
-                    put("parts", buildJsonArray { add(buildJsonObject { put("text", msg.content ?: "") }) })
+                    put("author", if (msg.role == LlmMessage.Role.assistant) "assistant" else "user")
+                    put("content", msg.content ?: "")
                 })
             }
         }
         val body = buildJsonObject {
-            put("contents", contents)
-            request.systemPrompt?.let {
-                put("systemInstruction", buildJsonObject {
-                    put("parts", buildJsonArray { add(buildJsonObject { put("text", it) }) })
-                })
-            }
+            put("instances", buildJsonArray {
+                add(buildJsonObject { put("messages", messages) })
+            })
+            put("parameters", buildJsonObject {
+                put("temperature", request.temperature)
+                put("maxOutputTokens", request.maxTokens)
+            })
         }
         val resp = post(url, body, mapOf("Authorization" to "Bearer $accessToken"))
         return parseVertexResponse(resp)
@@ -40,10 +53,11 @@ class VertexAiProvider(http: OkHttpClient, private val cfg: ProviderYaml) : Base
 
     private fun parseVertexResponse(body: String): CompletionResponse {
         val root = json.parseToJsonElement(body).jsonObject
-        val candidate = root["candidates"]?.jsonArray?.firstOrNull()?.jsonObject
-        val content = candidate?.get("content")?.jsonObject
-            ?.get("parts")?.jsonArray?.firstOrNull()?.jsonObject
-            ?.get("text")?.jsonPrimitive?.content
-        return CompletionResponse(content = content, providerId = id, modelUsed = model)
+        // predict response: {"predictions": [{"candidates": [{"content": "..."}]}]}
+        val prediction = root["predictions"]?.jsonArray?.firstOrNull()?.jsonObject
+        val text = prediction?.get("candidates")?.jsonArray?.firstOrNull()?.jsonObject
+            ?.get("content")?.jsonPrimitive?.contentOrNull
+            ?: prediction?.get("content")?.jsonPrimitive?.contentOrNull
+        return CompletionResponse(content = text, providerId = id, modelUsed = model)
     }
 }

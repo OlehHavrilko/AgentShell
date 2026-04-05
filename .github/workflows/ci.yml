@@ -7,14 +7,20 @@ on:
     branches: [ main ]
 
 jobs:
-  agent-core:
-    name: agent-core — Build & Test
+  build-and-test:
+    name: Build & Test
     runs-on: ubuntu-latest
 
     services:
       ollama:
         image: ollama/ollama:latest
-        ports: ["11434:11434"]
+        ports:
+          - 11434:11434
+        options: >-
+          --health-cmd "curl -f http://localhost:11434/api/tags || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout
@@ -30,36 +36,27 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Compile
-        run: ./gradlew :agent-core:compileKotlin --no-daemon
+      - name: Build
+        run: ./gradlew build --no-daemon
 
       - name: Run tests
+        run: ./gradlew test --no-daemon
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          AZURE_OPENAI_KEY: ${{ secrets.AZURE_OPENAI_KEY }}
-          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          COHERE_API_KEY: ${{ secrets.COHERE_API_KEY }}
-          HF_API_KEY: ${{ secrets.HF_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-        run: ./gradlew :agent-core:test --no-daemon
+          OLLAMA_HOST: http://localhost:11434
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-agent-core
-          path: agent-core/build/reports/tests/test/
+          name: test-results
+          path: build/reports/tests/test/
 
       - name: Build fat JAR
-        run: ./gradlew :agent-core:shadowJar --no-daemon
+        run: ./gradlew shadowJar --no-daemon
 
       - name: Upload JAR artifact
         uses: actions/upload-artifact@v4
         with:
-          name: agentshell-core-jar
-          path: agent-core/build/libs/*-all.jar
+          name: agentshell-jar
+          path: build/libs/*-all.jar
           retention-days: 7

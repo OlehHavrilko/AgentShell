@@ -11,16 +11,32 @@ class HuggingFaceProvider(http: OkHttpClient, private val cfg: ProviderYaml) : B
     override val displayName = "Hugging Face Inference"
     private val apiKey get() = cfg.apiKey?.ifBlank { null } ?: System.getenv("HF_API_KEY") ?: ""
     private val model get() = cfg.model ?: "meta-llama/Meta-Llama-3.2-3B-Instruct"
-    private val url get() = "https://api-inference.huggingface.co/models/$model/v1/chat/completions"
+    private val url get() = "https://api-inference.huggingface.co/models/$model"
 
     override suspend fun complete(request: CompletionRequest): CompletionResponse {
+        // HF Inference API: {"inputs": "<text>", "parameters": {...}}
+        val lastMessage = request.messages.lastOrNull()?.content ?: ""
         val body = buildJsonObject {
-            put("model", model)
-            put("max_tokens", request.maxTokens)
-            put("temperature", request.temperature)
-            put("messages", buildMessagesArray(request.messages, request.systemPrompt))
+            put("inputs", lastMessage)
+            put("parameters", buildJsonObject {
+                put("max_new_tokens", request.maxTokens)
+                put("temperature", request.temperature)
+                put("return_full_text", false)
+            })
         }
         val resp = post(url, body, mapOf("Authorization" to "Bearer $apiKey"))
-        return parseOpenAiResponse(resp, id, model)
+        return parseHuggingFaceResponse(resp)
+    }
+
+    private fun parseHuggingFaceResponse(body: String): CompletionResponse {
+        // Response is a JSON array: [{"generated_text": "..."}]
+        val root = json.parseToJsonElement(body)
+        val text = when {
+            root is JsonArray -> root.firstOrNull()?.jsonObject
+                ?.get("generated_text")?.jsonPrimitive?.contentOrNull
+            root is JsonObject -> root["generated_text"]?.jsonPrimitive?.contentOrNull
+            else -> null
+        }
+        return CompletionResponse(content = text, providerId = id, modelUsed = model)
     }
 }

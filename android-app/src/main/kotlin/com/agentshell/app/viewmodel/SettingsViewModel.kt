@@ -85,6 +85,8 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
         ProviderUiState("huggingface", "Hugging Face", false, prefs.getBoolean("prov_enabled_huggingface", false), prefs.getString("prov_apikey_huggingface", "") ?: "", prefs.getString("prov_model_huggingface", "meta-llama/Meta-Llama-3.2-3B-Instruct") ?: "", ""),
         ProviderUiState("cohere", "Cohere", false, prefs.getBoolean("prov_enabled_cohere", false), prefs.getString("prov_apikey_cohere", "") ?: "", prefs.getString("prov_model_cohere", "command-r-plus") ?: "", ""),
         ProviderUiState("llama_cpp", "Llama.cpp (Local)", true, prefs.getBoolean("prov_enabled_llama_cpp", false), "", prefs.getString("prov_model_llama_cpp", "") ?: "", ""),
+        ProviderUiState("openrouter", "OpenRouter", false, prefs.getBoolean("prov_enabled_openrouter", false), prefs.getString("prov_apikey_openrouter", "") ?: "", prefs.getString("prov_model_openrouter", "anthropic/claude-3.5-sonnet") ?: "", ""),
+        ProviderUiState("gemini", "Google Gemini", false, prefs.getBoolean("prov_enabled_gemini", false), prefs.getString("prov_apikey_gemini", "") ?: "", prefs.getString("prov_model_gemini", "gemini-1.5-flash") ?: "", ""),
     )
 
     fun toggleProvider(id: String, enabled: Boolean) {
