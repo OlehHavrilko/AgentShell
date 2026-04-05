@@ -31,6 +31,7 @@ class OpenAiGateway(
     private val baseUrl: String = "https://api.openai.com/v1",
     private val apiKey: String = System.getenv("OPENAI_API_KEY") ?: "",
     private val timeoutSeconds: Long = 60,
+    private val extraHeaders: Map<String, String> = emptyMap(),
 ) : LlmGateway {
 
     private val log = LoggerFactory.getLogger(OpenAiGateway::class.java)
@@ -61,9 +62,11 @@ class OpenAiGateway(
 
         log.debug("OpenAI request: model={} messages={} tools={}", model, allMessages.size, tools.size)
 
-        val request = HttpRequest.newBuilder(URI.create("$baseUrl/chat/completions"))
+        val requestBuilder = HttpRequest.newBuilder(URI.create("$baseUrl/chat/completions"))
             .header("Authorization", "Bearer $apiKey")
             .header("Content-Type", "application/json")
+        extraHeaders.forEach { (k, v) -> requestBuilder.header(k, v) }
+        val request = requestBuilder
             .POST(HttpRequest.BodyPublishers.ofString(json.encodeToString(body)))
             .timeout(Duration.ofSeconds(timeoutSeconds))
             .build()
