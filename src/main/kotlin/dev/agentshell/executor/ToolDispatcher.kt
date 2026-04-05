@@ -14,7 +14,15 @@ import dev.agentshell.domain.ToolResult
  */
 class ToolDispatcher(executors: List<ToolExecutor> = defaultExecutors()) {
 
-    private val registry: Map<String, ToolExecutor> = executors.associateBy { it.toolName }
+    private val registry: MutableMap<String, ToolExecutor> = executors.associateBy { it.toolName }.toMutableMap()
+
+    /** Dynamically register an executor (e.g. from MCP). */
+    fun register(executor: ToolExecutor) {
+        registry[executor.toolName] = executor
+    }
+
+    /** Returns all registered tool names. */
+    fun registeredTools(): Set<String> = registry.keys
 
     fun dispatch(call: ToolCall, contract: ToolContract, policy: SandboxPolicy = policyFor(contract)): ToolResult {
         SchemaValidator.validate(call)?.let { return it }

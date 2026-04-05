@@ -13,5 +13,6 @@ enum class ErrorCode(val retryable: Boolean) {
     ERR_PROVIDER_UNAVAILABLE(true),
     ERR_CONTEXT_OVERFLOW(true),
     ERR_MCP_DISCONNECTED(true),
-    ERR_PLUGIN_INCOMPATIBLE(false)
+    ERR_PLUGIN_INCOMPATIBLE(false),
+    EXECUTION_FAILED(true),
 }

@@ -3,6 +3,11 @@ package dev.agentshell.runtime
 import dev.agentshell.audit.AuditEvent
 import dev.agentshell.audit.AuditEventType
 import dev.agentshell.audit.AuditTrail
+import dev.agentshell.llm.ContextBudgetManager
+import dev.agentshell.llm.LlmGateway
+import dev.agentshell.llm.LlmMessage
+import dev.agentshell.llm.LlmResponse
+import dev.agentshell.llm.LlmTool
 import dev.agentshell.domain.ApprovalRequest
 import dev.agentshell.domain.Checkpoint
 import dev.agentshell.domain.ErrorCode
@@ -31,6 +36,7 @@ class AgentRunner(
     private val heartbeat: HeartbeatService = HeartbeatService(stateStore),
     private val runtime: AgentRuntime = AgentRuntime(stateStore),
     private val auditTrail: AuditTrail? = null,
+    private val gateway: LlmGateway? = null,
 ) {
     private val log = LoggerFactory.getLogger(AgentRunner::class.java)
 
@@ -39,6 +45,15 @@ class AgentRunner(
         val steps: List<StepDef>,
         val riskThreshold: Int = 60,
         val isNewRepo: Boolean = false,
+    )
+
+    data class AgenticConfig(
+        val agentId: String,
+        val goal: String,
+        val systemPrompt: String = DEFAULT_SYSTEM_PROMPT,
+        val riskThreshold: Int = 60,
+        val maxIterations: Int = 50,
+        val maxInputTokens: Int = 100_000,
     )
 
     data class StepDef(
@@ -50,7 +65,163 @@ class AgentRunner(
         val runId: String,
         val status: RunStatus,
         val results: List<ToolResult>,
+        val finalMessage: String? = null,
     )
+
+    /**
+     * Agentic execution mode: the LLM drives the loop, choosing tools until it decides to stop.
+     *
+     * Loop:
+     * 1. Send conversation (system + history + goal) to LLM
+     * 2. If LLM returns tool_calls → execute each → append results → go to 1
+     * 3. If LLM returns END_TURN → done
+     *
+     * Requires [gateway] to be non-null on this AgentRunner instance.
+     */
+    fun executeAgentic(config: AgenticConfig): RunOutcome {
+        requireNotNull(gateway) { "LlmGateway is required for agentic mode. Set gateway= in AgentRunner constructor." }
+
+        // Create run record in state store
+        val run = dev.agentshell.domain.Run(
+            runId = UUID.randomUUID().toString(),
+            agentId = config.agentId,
+            status = RunStatus.RUNNING,
+            heartbeatMs = System.currentTimeMillis(),
+            checkpoint = dev.agentshell.domain.Checkpoint(stepIndex = -1, contextSummary = "agentic", artifactRefs = emptyList()),
+        )
+        stateStore.saveRun(run)
+        val runId = run.runId
+
+        log.info("Starting agentic run={} agentId={} goal={}", runId, config.agentId, config.goal.take(80))
+        audit(AuditEvent(AuditEventType.RUN_STARTED, runId, detail = "agentId=${config.agentId} mode=AGENTIC"))
+
+        heartbeat.start(runId)
+        val budget = ContextBudgetManager(config.maxInputTokens)
+        val conversation = mutableListOf(LlmMessage(LlmMessage.Role.user, config.goal))
+        val results = mutableListOf<ToolResult>()
+
+        val tools = dispatcher.registeredTools().map { name -> llmToolFor(name) }
+
+        try {
+            var iterations = 0
+
+            while (iterations < config.maxIterations) {
+                iterations++
+                val trimmed = budget.trimToFit(conversation)
+                val response = gateway.complete(trimmed, tools, config.systemPrompt)
+                budget.recordUsage(response.inputTokens, response.outputTokens)
+
+                log.debug("LLM turn {}: stopReason={} toolCalls={}", iterations, response.stopReason, response.toolCalls.size)
+                audit(AuditEvent(AuditEventType.STEP_STARTED, runId, detail = "llmTurn=$iterations stopReason=${response.stopReason}"))
+
+                if (response.stopReason == LlmResponse.StopReason.END_TURN || response.toolCalls.isEmpty()) {
+                    // LLM is done
+                    if (response.content != null) {
+                        conversation.add(LlmMessage(LlmMessage.Role.assistant, response.content))
+                    }
+                    stateStore.updateStatus(runId, RunStatus.COMPLETED)
+                    audit(AuditEvent(AuditEventType.RUN_COMPLETED, runId, detail = "iterations=$iterations"))
+                    log.info("Agentic run {} COMPLETED after {} iterations", runId, iterations)
+                    return RunOutcome(runId, RunStatus.COMPLETED, results, finalMessage = response.content)
+                }
+
+                // Append the assistant message with tool calls
+                conversation.add(LlmMessage(LlmMessage.Role.assistant, response.content, response.toolCalls))
+
+                // Execute each tool call
+                for (tc in response.toolCalls) {
+                    val stepId = UUID.randomUUID().toString()
+                    audit(AuditEvent(AuditEventType.STEP_STARTED, runId, stepId = stepId, toolName = tc.toolName, argsJson = tc.argumentsJson.take(500)))
+
+                    val riskScore = riskScorer.score(tc.toolName, tc.argumentsJson, false)
+                    if (riskScorer.requiresApproval(riskScore, config.riskThreshold)) {
+                        val approval = ApprovalRequest(
+                            approvalId = UUID.randomUUID().toString(),
+                            runId = runId,
+                            stepId = stepId,
+                            riskScore = riskScore,
+                            impactPreview = "tool=${tc.toolName} args=${tc.argumentsJson.take(200)}",
+                        )
+                        approvalGate.request(approval)
+                        stateStore.updateStatus(runId, RunStatus.WAITING_APPROVAL)
+                        audit(AuditEvent(AuditEventType.APPROVAL_REQUESTED, runId, stepId = stepId, detail = "approvalId=${approval.approvalId} score=$riskScore"))
+                        log.warn("Agentic run {} paused — approval required for {} score={}", runId, tc.toolName, riskScore)
+                        return RunOutcome(runId, RunStatus.WAITING_APPROVAL, results)
+                    }
+
+                    val call = ToolCall(callId = tc.id, toolName = tc.toolName, argumentsJson = tc.argumentsJson)
+                    val contract = contractForTool(tc.toolName)
+                    val result = executeWithRetry(call, contract, ToolDispatcher.policyFor(contract), dispatcher)
+                    results.add(result)
+
+                    val toolContent = result.outputJson ?: result.errorDetail ?: "no output"
+                    conversation.add(LlmMessage(LlmMessage.Role.tool, toolContent, toolCallId = tc.id))
+
+                    if (result.success) {
+                        audit(AuditEvent(AuditEventType.STEP_COMPLETED, runId, stepId = stepId, toolName = tc.toolName, resultJson = result.outputJson?.take(500)))
+                    } else {
+                        audit(AuditEvent(AuditEventType.STEP_FAILED, runId, stepId = stepId, toolName = tc.toolName, errorCode = result.errorCode?.name, detail = result.errorDetail))
+                        log.warn("Tool {} failed in agentic run — LLM will see the error and decide", tc.toolName)
+                    }
+                }
+
+                stateStore.updateCheckpoint(runId, Checkpoint(stepIndex = iterations, contextSummary = "agentic iteration $iterations", artifactRefs = emptyList()))
+            }
+
+            // Exceeded max iterations
+            log.warn("Agentic run {} exceeded maxIterations={}", runId, config.maxIterations)
+            stateStore.updateStatus(runId, RunStatus.FAILED)
+            audit(AuditEvent(AuditEventType.RUN_FAILED, runId, detail = "maxIterations=${config.maxIterations} exceeded"))
+            return RunOutcome(runId, RunStatus.FAILED, results)
+
+        } catch (e: Exception) {
+            log.error("Agentic run {} CRASHED: {}", runId, e.message, e)
+            stateStore.updateStatus(runId, RunStatus.CRASHED)
+            audit(AuditEvent(AuditEventType.RUN_CRASHED, runId, detail = e.message))
+            return RunOutcome(runId, RunStatus.CRASHED, results)
+        } finally {
+            heartbeat.stop()
+        }
+    }
+
+    private fun llmToolFor(toolName: String): LlmTool = LlmTool(
+        name = toolName,
+        description = toolDescriptions[toolName] ?: toolName,
+        parametersJson = toolSchemas[toolName] ?: GENERIC_SCHEMA,
+    )
+
+    private fun contractForTool(toolName: String): ToolContract = ToolContract(
+        name = toolName,
+        version = "1.0",
+        description = toolDescriptions[toolName] ?: toolName,
+        riskLevel = when {
+            toolName.contains("push") || toolName.contains("delete") -> dev.agentshell.domain.RiskLevel.HIGH
+            toolName.startsWith("mcp_") -> dev.agentshell.domain.RiskLevel.MEDIUM
+            else -> dev.agentshell.domain.RiskLevel.MEDIUM
+        },
+        sandboxPolicy = "shell_default",
+    )
+
+    companion object {
+        const val DEFAULT_SYSTEM_PROMPT = """You are AgentShell, an autonomous software engineering agent.
+You have access to shell execution, file operations, and git tools.
+Be methodical: think through the task, use tools step by step, verify results.
+When the task is complete, respond with a brief summary of what you did."""
+
+        private val toolDescriptions = mapOf(
+            "shell_exec" to "Execute a shell command. Args: command (string)",
+            "file_write" to "Read, write, or append to files. Args: operation (read|write|append), path, content (for write/append)",
+            "git_exec" to "Run a git subcommand. Args: subcommand (status|add|commit|diff|log|push), args",
+        )
+
+        private val toolSchemas = mapOf(
+            "shell_exec" to """{"type":"object","properties":{"command":{"type":"string","description":"Shell command to run"}},"required":["command"]}""",
+            "file_write" to """{"type":"object","properties":{"operation":{"type":"string","enum":["read","write","append"]},"path":{"type":"string"},"content":{"type":"string"}},"required":["operation","path"]}""",
+            "git_exec" to """{"type":"object","properties":{"subcommand":{"type":"string"},"args":{"type":"string"}},"required":["subcommand"]}""",
+        )
+
+        private const val GENERIC_SCHEMA = """{"type":"object","properties":{},"additionalProperties":true}"""
+    }
 
     private fun audit(event: AuditEvent) = auditTrail?.record(event)
 
