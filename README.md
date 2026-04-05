@@ -1,5 +1,32 @@
 # AgentShell
 
+## Multi-module Structure
+
+This is a multi-module Gradle project:
+
+| Module | Description |
+|--------|-------------|
+| `:agent-core` | Pure Kotlin/JVM library — all business logic (orchestrator, LLM gateways, executors, memory, state, rules, MCP) |
+| `:android-app` | Android application — Compose UI, foreground service, Room DB, ViewModel layer |
+
+### Building
+
+```bash
+# Build the CLI fat JAR (runs on any JVM)
+./gradlew :agent-core:shadowJar
+# Output: agent-core/build/libs/agent-core-1.0.0-all.jar
+
+# Build the Android APK
+./gradlew :android-app:assembleRelease
+# Output: android-app/build/outputs/apk/release/android-app-release.apk
+
+# Build the Alpine Linux rootfs for the Proot sandbox (requires Docker)
+./scripts/build_rootfs.sh
+# Output: android-app/src/main/assets/rootfs.tar.gz
+```
+
+---
+
 A resume-first, approval-gated agent runtime for safe autonomous tool execution on Android/JVM.
 
 Supports scripted YAML pipelines **and** fully autonomous LLM-driven agentic loops with MCP tool integration.
