@@ -8,6 +8,9 @@ import dev.agentshell.llm.LlmGateway
 import dev.agentshell.llm.OllamaGateway
 import dev.agentshell.llm.OpenAiGateway
 import dev.agentshell.llm.OpenRouterGateway
+import dev.agentshell.observability.MetricsServer
+import dev.agentshell.observability.MetricsCollector
+import dev.agentshell.report.RunReportGenerator
 import dev.agentshell.runtime.AgentRunner
 import dev.agentshell.runtime.AgentRuntime
 import dev.agentshell.runtime.ApprovalGate
@@ -51,6 +54,15 @@ fun main(args: Array<String>) {
         }
     }
 
+    val metricsServer = config.metricsPort?.let { port ->
+        val reportGen = RunReportGenerator(store, auditTrail)
+        MetricsServer(port, reportGen).also {
+            it.start()
+            println("Metrics server:  http://localhost:$port/metrics")
+            println("Run reports:     http://localhost:$port/report/{runId}")
+        }
+    }
+
     val runner = AgentRunner(
         stateStore = store,
         dispatcher = dispatcher,
@@ -66,6 +78,7 @@ fun main(args: Array<String>) {
     Runtime.getRuntime().addShutdownHook(Thread({
         log.info("Shutdown hook triggered — closing resources")
         approvalServer?.stop()
+        metricsServer?.stop()
         watchdog.stop()
         heartbeat.shutdown()
         db.close()
@@ -100,6 +113,7 @@ private data class CliConfig(
     val dbPath: String,
     val approvalTtlMs: Long,
     val approvalPort: Int?,
+    val metricsPort: Int?,
     val riskThreshold: Int,
     val mode: RunMode,
     // SCRIPTED mode
@@ -154,6 +168,7 @@ private fun parseArgs(args: Array<String>): CliConfig? {
     val riskThreshold = map["risk-threshold"]?.toIntOrNull() ?: 60
     val approvalTtlMs = map["approval-ttl-ms"]?.toLongOrNull() ?: ApprovalGate.DEFAULT_TTL_MS
     val approvalPort = map["approval-port"]?.toIntOrNull()
+    val metricsPort  = map["metrics-port"]?.toIntOrNull()
     val maxIterations = map["max-iterations"]?.toIntOrNull() ?: 50
 
     // ─── Agentic mode ──────────────────────────────────────────────────────
@@ -170,7 +185,7 @@ private fun parseArgs(args: Array<String>): CliConfig? {
         val gateway = buildGateway(provider, model, map) ?: return null
         return CliConfig(
             agentId = agentId, dbPath = dbPath, approvalTtlMs = approvalTtlMs,
-            approvalPort = approvalPort, riskThreshold = riskThreshold,
+            approvalPort = approvalPort, metricsPort = metricsPort, riskThreshold = riskThreshold,
             mode = RunMode.AGENTIC, runConfig = null,
             gateway = gateway, goal = goal, maxIterations = maxIterations,
         )
@@ -197,7 +212,7 @@ private fun parseArgs(args: Array<String>): CliConfig? {
 
     return CliConfig(
         agentId = agentId, dbPath = dbPath, approvalTtlMs = approvalTtlMs,
-        approvalPort = approvalPort, riskThreshold = riskThreshold,
+        approvalPort = approvalPort, metricsPort = metricsPort, riskThreshold = riskThreshold,
         mode = RunMode.SCRIPTED, runConfig = runConfig,
         gateway = null, goal = null, maxIterations = maxIterations,
     )

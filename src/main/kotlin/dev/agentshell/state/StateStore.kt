@@ -6,6 +6,8 @@ import dev.agentshell.domain.RunStatus
 
 interface StateStore {
     fun saveRun(run: Run): Run
+    fun getRun(runId: String): Run?
+    fun listAll(): List<Run>
     fun findRunByAgent(agentId: String, statuses: Set<RunStatus>): Run?
     fun listRunsByStatus(statuses: Set<RunStatus>): List<Run>
     fun updateHeartbeat(runId: String, heartbeatMs: Long): Run

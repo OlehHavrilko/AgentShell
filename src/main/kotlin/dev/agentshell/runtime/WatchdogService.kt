@@ -4,6 +4,7 @@ import dev.agentshell.audit.AuditEvent
 import dev.agentshell.audit.AuditEventType
 import dev.agentshell.audit.AuditTrail
 import dev.agentshell.domain.RunStatus
+import dev.agentshell.observability.MetricsCollector
 import dev.agentshell.state.StateStore
 import org.slf4j.LoggerFactory
 import java.time.Clock
@@ -53,6 +54,7 @@ class WatchdogService(
                     run.runId, age, stuckThresholdMs,
                 )
                 stateStore.updateStatus(run.runId, RunStatus.CRASHED)
+                MetricsCollector.watchdogCrashes.incrementAndGet()
                 auditTrail?.record(
                     AuditEvent(
                         eventType = AuditEventType.RUN_CRASHED,

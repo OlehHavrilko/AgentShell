@@ -1,0 +1,30 @@
+version: "3.9"
+
+services:
+  agentshell:
+    build: .
+    image: agentshell:latest
+    container_name: agentshell
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # Approval HTTP API
+      - "9090:9090"   # Metrics / report
+    volumes:
+      - agentshell-data:/data/agentshell
+    environment:
+      # LLM provider API keys — set in .env file or shell environment
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    command: >
+      --agent docker-agent
+      --agentic
+      --goal "Help the user with software engineering tasks"
+      --provider openai
+      --approval-port 8080
+      --metrics-port 9090
+      --db /data/agentshell/agent.db
+
+volumes:
+  agentshell-data:
+    driver: local

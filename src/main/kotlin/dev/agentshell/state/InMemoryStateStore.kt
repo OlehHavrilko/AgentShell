@@ -13,6 +13,10 @@ class InMemoryStateStore : StateStore {
         return run
     }
 
+    override fun getRun(runId: String): Run? = runs[runId]
+
+    override fun listAll(): List<Run> = runs.values.toList()
+
     override fun findRunByAgent(agentId: String, statuses: Set<RunStatus>): Run? {
         return runs.values
             .filter { it.agentId == agentId && statuses.contains(it.status) }

@@ -42,6 +42,19 @@ class SqliteStateStore(private val db: DatabaseManager) : StateStore {
         run
     }
 
+    override fun getRun(runId: String): Run? = synchronized(conn) {
+        conn.prepareStatement("SELECT * FROM runs WHERE run_id=?").use { stmt ->
+            stmt.setString(1, runId)
+            stmt.executeQuery().use { rs -> if (rs.next()) rs.toRun() else null }
+        }
+    }
+
+    override fun listAll(): List<Run> = synchronized(conn) {
+        conn.prepareStatement("SELECT * FROM runs ORDER BY heartbeat_ms DESC").use { stmt ->
+            stmt.executeQuery().use { rs -> buildList { while (rs.next()) add(rs.toRun()) } }
+        }
+    }
+
     override fun findRunByAgent(agentId: String, statuses: Set<RunStatus>): Run? = synchronized(conn) {
         if (statuses.isEmpty()) return null
         val placeholders = statuses.joinToString(",") { "?" }

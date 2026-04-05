@@ -13,6 +13,7 @@ import dev.agentshell.domain.Checkpoint
 import dev.agentshell.domain.ErrorCode
 import dev.agentshell.domain.RunStatus
 import dev.agentshell.domain.Step
+import dev.agentshell.observability.MetricsCollector
 import dev.agentshell.domain.ToolCall
 import dev.agentshell.domain.ToolContract
 import dev.agentshell.domain.ToolResult
@@ -223,7 +224,21 @@ When the task is complete, respond with a brief summary of what you did."""
         private const val GENERIC_SCHEMA = """{"type":"object","properties":{},"additionalProperties":true}"""
     }
 
-    private fun audit(event: AuditEvent) = auditTrail?.record(event)
+    private fun audit(event: AuditEvent) {
+        auditTrail?.record(event)
+        // Mirror key events to MetricsCollector
+        when (event.eventType) {
+            AuditEventType.RUN_STARTED   -> MetricsCollector.runsStarted.incrementAndGet()
+            AuditEventType.RUN_RESUMED   -> MetricsCollector.runsResumed.incrementAndGet()
+            AuditEventType.RUN_COMPLETED -> MetricsCollector.runsCompleted.incrementAndGet()
+            AuditEventType.RUN_FAILED    -> MetricsCollector.runsFailed.incrementAndGet()
+            AuditEventType.RUN_CRASHED   -> MetricsCollector.runsCrashed.incrementAndGet()
+            AuditEventType.APPROVAL_REQUESTED -> MetricsCollector.approvalsRequested.incrementAndGet()
+            AuditEventType.STEP_STARTED  -> MetricsCollector.toolCallsTotal.incrementAndGet()
+            AuditEventType.STEP_FAILED   -> MetricsCollector.toolCallsFailed.incrementAndGet()
+            else -> Unit
+        }
+    }
 
     fun execute(config: RunConfig): RunOutcome {
         val decision = runtime.startOrResume(config.agentId)
