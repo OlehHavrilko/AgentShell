@@ -36,7 +36,7 @@ class IdempotencyService(
         return created
     }
 
-    fun complete(key: String, resultJson: String): IdempotencyEntry {
+    fun complete(key: String, resultJson: String?): IdempotencyEntry {
         val current = entries[key] ?: error("idempotency key not started: $key")
         val completed = current.copy(status = IdempotencyStatus.COMPLETED, resultJson = resultJson)
         entries[key] = completed
