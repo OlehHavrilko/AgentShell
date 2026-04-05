@@ -1,0 +1,81 @@
+# AgentShell Risk Rules
+# Each rule is evaluated in order; the first matching rule wins.
+# All specified fields must match (tool AND pattern if both set).
+
+defaultScore: 30
+
+rules:
+  # ─── Always block ────────────────────────────────────────────────────────
+  - name: block-rm-rf
+    pattern: "rm\\s+-[a-zA-Z]*r[a-zA-Z]*f|rm\\s+-[a-zA-Z]*f[a-zA-Z]*r"
+    score: 100
+    block: true
+
+  - name: block-force-push
+    tool: git_exec
+    pattern: "--force|push.*-f\\b"
+    score: 100
+    block: true
+
+  # ─── Require approval ────────────────────────────────────────────────────
+  - name: require-approval-git-push-main
+    tool: git_exec
+    pattern: "push.*(main|master)"
+    score: 90
+    requireApproval: true
+
+  - name: require-approval-git-push
+    tool: git_exec
+    pattern: "push"
+    score: 80
+    requireApproval: true
+
+  - name: require-approval-drop-database
+    pattern: "DROP\\s+(DATABASE|TABLE|SCHEMA)"
+    score: 95
+    requireApproval: true
+
+  # ─── High risk ───────────────────────────────────────────────────────────
+  - name: high-risk-chmod
+    pattern: "chmod\\s+(777|a\\+x|\\+x)"
+    score: 75
+
+  - name: high-risk-curl-pipe-sh
+    pattern: "curl.*\\|.*sh|wget.*\\|.*sh"
+    score: 85
+
+  - name: high-risk-sudo
+    pattern: "\\bsudo\\b"
+    score: 80
+
+  - name: high-risk-write-system-paths
+    tool: file_write
+    pattern: "\"path\":\"/etc/|\"path\":\"/usr/|\"path\":\"/bin/|\"path\":\"/sbin/"
+    score: 90
+    requireApproval: true
+
+  # ─── Medium risk ─────────────────────────────────────────────────────────
+  - name: medium-risk-git-commit
+    tool: git_exec
+    pattern: "commit"
+    score: 40
+
+  - name: medium-risk-file-write
+    tool: file_write
+    pattern: "\"operation\":\"write\""
+    score: 35
+
+  - name: medium-risk-shell
+    tool: shell_exec
+    score: 30
+
+  # ─── Low risk ────────────────────────────────────────────────────────────
+  - name: low-risk-file-read
+    tool: file_write
+    pattern: "\"operation\":\"read\""
+    score: 5
+
+  - name: low-risk-git-status
+    tool: git_exec
+    pattern: "status|log|diff"
+    score: 5

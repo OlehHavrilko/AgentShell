@@ -56,6 +56,19 @@ class SqliteStateStore(private val db: DatabaseManager) : StateStore {
         }
     }
 
+    override fun listRunsByStatus(statuses: Set<RunStatus>): List<Run> = synchronized(conn) {
+        if (statuses.isEmpty()) return emptyList()
+        val placeholders = statuses.joinToString(",") { "?" }
+        conn.prepareStatement(
+            "SELECT * FROM runs WHERE status IN ($placeholders) ORDER BY heartbeat_ms DESC"
+        ).use { stmt ->
+            statuses.forEachIndexed { i, s -> stmt.setString(i + 1, s.name) }
+            stmt.executeQuery().use { rs ->
+                buildList { while (rs.next()) add(rs.toRun()) }
+            }
+        }
+    }
+
     override fun updateHeartbeat(runId: String, heartbeatMs: Long): Run = synchronized(conn) {
         conn.prepareStatement("UPDATE runs SET heartbeat_ms=? WHERE run_id=?").use { stmt ->
             stmt.setLong(1, heartbeatMs)

@@ -19,6 +19,9 @@ class InMemoryStateStore : StateStore {
             .maxByOrNull { it.heartbeatMs }
     }
 
+    override fun listRunsByStatus(statuses: Set<RunStatus>): List<Run> =
+        runs.values.filter { statuses.contains(it.status) }
+
     override fun updateHeartbeat(runId: String, heartbeatMs: Long): Run {
         val current = runs[runId] ?: error("run not found: $runId")
         val updated = current.copy(heartbeatMs = heartbeatMs)
