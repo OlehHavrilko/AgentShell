@@ -3,12 +3,12 @@ package dev.agentshell.runtime
 import dev.agentshell.domain.Checkpoint
 import dev.agentshell.domain.Run
 import dev.agentshell.domain.RunStatus
-import dev.agentshell.state.InMemoryStateStore
+import dev.agentshell.state.StateStore
 import java.time.Clock
 import java.util.UUID
 
 class AgentRuntime(
-    private val stateStore: InMemoryStateStore,
+    private val stateStore: StateStore,
     private val clock: Clock = Clock.systemUTC(),
 ) {
     fun startOrResume(agentId: String): RuntimeDecision {
