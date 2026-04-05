@@ -1,5 +1,8 @@
 package dev.agentshell.runtime
 
+import dev.agentshell.audit.AuditEvent
+import dev.agentshell.audit.AuditEventType
+import dev.agentshell.audit.AuditTrail
 import dev.agentshell.domain.ApprovalRequest
 import dev.agentshell.domain.Checkpoint
 import dev.agentshell.domain.ErrorCode
@@ -27,6 +30,7 @@ class AgentRunner(
     private val idempotency: IdempotencyService = IdempotencyService(),
     private val heartbeat: HeartbeatService = HeartbeatService(stateStore),
     private val runtime: AgentRuntime = AgentRuntime(stateStore),
+    private val auditTrail: AuditTrail? = null,
 ) {
     private val log = LoggerFactory.getLogger(AgentRunner::class.java)
 
@@ -48,6 +52,8 @@ class AgentRunner(
         val results: List<ToolResult>,
     )
 
+    private fun audit(event: AuditEvent) = auditTrail?.record(event)
+
     fun execute(config: RunConfig): RunOutcome {
         val decision = runtime.startOrResume(config.agentId)
         val runId: String
@@ -62,11 +68,13 @@ class AgentRunner(
                 runId = decision.runId
                 fromStep = decision.fromStep
                 log.info("Starting new run={} agentId={} steps={}", runId, config.agentId, config.steps.size)
+                audit(AuditEvent(AuditEventType.RUN_STARTED, runId, detail = "agentId=${config.agentId} steps=${config.steps.size}"))
             }
             is RuntimeDecision.Resume -> {
                 runId = decision.runId
                 fromStep = decision.fromStep
                 log.info("Resuming run={} agentId={} fromStep={}", runId, config.agentId, fromStep)
+                audit(AuditEvent(AuditEventType.RUN_RESUMED, runId, detail = "fromStep=$fromStep"))
             }
         }
 
@@ -79,6 +87,7 @@ class AgentRunner(
                 val stepId = UUID.randomUUID().toString()
 
                 log.info("Step {}/{} runId={} tool={}", index + 1, config.steps.size, runId, stepDef.call.toolName)
+                audit(AuditEvent(AuditEventType.STEP_STARTED, runId, stepId = stepId, toolName = stepDef.call.toolName, argsJson = stepDef.call.argumentsJson.take(500)))
 
                 // Risk check
                 val riskScore = riskScorer.score(stepDef.call.toolName, stepDef.call.argumentsJson, config.isNewRepo)
@@ -93,6 +102,7 @@ class AgentRunner(
                     approvalGate.request(approval)
                     stateStore.updateStatus(runId, RunStatus.WAITING_APPROVAL)
                     log.warn("Step {} requires approval (score={}) approvalId={}", index, riskScore, approval.approvalId)
+                    audit(AuditEvent(AuditEventType.APPROVAL_REQUESTED, runId, stepId = stepId, detail = "approvalId=${approval.approvalId} score=$riskScore"))
                     return RunOutcome(runId, RunStatus.WAITING_APPROVAL, results)
                 }
 
@@ -140,6 +150,7 @@ class AgentRunner(
 
                 if (!result.success) {
                     log.error("Step {} FAILED runId={} errorCode={} detail={}", index, runId, result.errorCode, result.errorDetail)
+                    audit(AuditEvent(AuditEventType.STEP_FAILED, runId, stepId = stepId, toolName = stepDef.call.toolName, errorCode = result.errorCode?.name, detail = result.errorDetail))
                     stateStore.updateStatus(runId, RunStatus.FAILED)
                     return RunOutcome(runId, RunStatus.FAILED, results)
                 }
@@ -149,16 +160,19 @@ class AgentRunner(
                     runId,
                     Checkpoint(stepIndex = index, contextSummary = "completed step $index", artifactRefs = emptyList()),
                 )
+                audit(AuditEvent(AuditEventType.STEP_COMPLETED, runId, stepId = stepId, toolName = stepDef.call.toolName, resultJson = result.outputJson?.take(500)))
                 log.info("Step {} completed runId={}", index, runId)
             }
 
             stateStore.updateStatus(runId, RunStatus.COMPLETED)
             log.info("Run {} COMPLETED ({} steps)", runId, results.size)
+            audit(AuditEvent(AuditEventType.RUN_COMPLETED, runId, detail = "steps=${results.size}"))
             return RunOutcome(runId, RunStatus.COMPLETED, results)
 
         } catch (e: Exception) {
             log.error("Run {} CRASHED: {}", runId, e.message, e)
             stateStore.updateStatus(runId, RunStatus.CRASHED)
+            audit(AuditEvent(AuditEventType.RUN_CRASHED, runId, detail = e.message))
             return RunOutcome(runId, RunStatus.CRASHED, results)
         } finally {
             heartbeat.stop()

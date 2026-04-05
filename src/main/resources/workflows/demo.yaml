@@ -1,0 +1,32 @@
+name: Demo Pipeline
+description: Harmless demo showing AgentShell workflow capabilities
+riskThreshold: 60
+
+steps:
+  - id: step-hello
+    tool: shell_exec
+    args:
+      command: echo "AgentShell workflow OK"
+    description: Print greeting
+
+  - id: step-date
+    tool: shell_exec
+    args:
+      command: date +"%Y-%m-%d %H:%M:%S"
+    idempotencyKey: demo-date
+    description: Print current date
+
+  - id: step-write
+    tool: file_write
+    args:
+      operation: write
+      path: /tmp/agentshell-demo.txt
+      content: "AgentShell was here"
+    description: Write a demo file
+
+  - id: step-read
+    tool: file_write
+    args:
+      operation: read
+      path: /tmp/agentshell-demo.txt
+    description: Read the demo file back

@@ -48,6 +48,12 @@ class ApprovalGate(
         return timed.approval
     }
 
+    /** Returns all PENDING approval requests. */
+    fun pendingApprovals(): List<ApprovalRequest> =
+        requests.values
+            .filter { it.approval.status == "PENDING" && clock.millis() <= it.expiresAt }
+            .map { it.approval }
+
     /** Removes all terminal (non-PENDING) and expired entries. */
     fun prune() {
         val now = clock.millis()
