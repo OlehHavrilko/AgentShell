@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentShell</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
+    --accent: #7c6cf7; --green: #3fb950; --red: #f85149;
+    --yellow: #d29922; --text: #e6edf3; --muted: #8b949e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.5 'Inter', system-ui, sans-serif; min-height: 100vh; }
+  nav { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; align-items: center; gap: 24px; height: 52px; position: sticky; top: 0; z-index: 100; }
+  nav .logo { font-weight: 700; font-size: 16px; color: var(--accent); letter-spacing: -.5px; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 13px; padding: 6px 0; border-bottom: 2px solid transparent; transition: .15s; }
+  nav a:hover, nav a.active { color: var(--text); border-color: var(--accent); }
+  .page { display: none; padding: 24px; max-width: 1100px; margin: 0 auto; }
+  .page.active { display: block; }
+  h2 { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 8px 12px; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:hover td { background: rgba(255,255,255,.03); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  .badge-COMPLETED  { background: rgba(63,185,80,.15); color: var(--green); }
+  .badge-RUNNING    { background: rgba(124,108,247,.15); color: var(--accent); }
+  .badge-FAILED     { background: rgba(248,81,73,.15); color: var(--red); }
+  .badge-CRASHED    { background: rgba(248,81,73,.1); color: var(--red); }
+  .badge-WAITING_APPROVAL { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .badge-PENDING    { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .badge-QUEUED     { background: rgba(139,148,158,.15); color: var(--muted); }
+  .btn { padding: 5px 14px; border-radius: 6px; border: 1px solid var(--border); cursor: pointer; font-size: 12px; font-weight: 600; transition: .15s; }
+  .btn-approve { background: rgba(63,185,80,.12); color: var(--green); border-color: rgba(63,185,80,.3); }
+  .btn-approve:hover { background: rgba(63,185,80,.25); }
+  .btn-reject  { background: rgba(248,81,73,.12); color: var(--red); border-color: rgba(248,81,73,.3); }
+  .btn-reject:hover { background: rgba(248,81,73,.25); }
+  .btn-link { background: transparent; color: var(--accent); border-color: transparent; padding: 4px 8px; }
+  .btn-link:hover { background: rgba(124,108,247,.1); }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; }
+  .card h3 { font-size: 15px; margin-bottom: 12px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+  .meta-item { font-size: 12px; color: var(--muted); }
+  .meta-item span { color: var(--text); font-weight: 500; }
+  .steps-table td:first-child { font-family: monospace; font-size: 12px; color: var(--muted); width: 220px; }
+  .empty { text-align: center; color: var(--muted); padding: 48px; font-size: 13px; }
+  .refresh { font-size: 11px; color: var(--muted); margin-left: auto; }
+  #live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; margin-right: 4px; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  pre { background: rgba(0,0,0,.4); border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-size: 11px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; }
+  .metrics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .metric-card .val { font-size: 28px; font-weight: 700; color: var(--accent); line-height: 1; margin-bottom: 4px; }
+  .metric-card .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+</style>
+</head>
+<body>
+<nav>
+  <div class="logo">⚡ AgentShell</div>
+  <a href="#" class="active" onclick="showPage('runs',this)">Runs</a>
+  <a href="#" onclick="showPage('approvals',this)">Approvals</a>
+  <a href="#" onclick="showPage('metrics',this)">Metrics</a>
+  <span class="refresh"><span id="live-dot"></span>live</span>
+</nav>
+
+<!-- RUNS -->
+<div id="page-runs" class="page active">
+  <h2>All Runs</h2>
+  <div id="runs-body"><div class="empty">Loading…</div></div>
+</div>
+
+<!-- APPROVALS -->
+<div id="page-approvals" class="page">
+  <h2>Pending Approvals</h2>
+  <div id="approvals-body"><div class="empty">Loading…</div></div>
+</div>
+
+<!-- METRICS -->
+<div id="page-metrics" class="page">
+  <h2>Metrics</h2>
+  <div id="metrics-body" class="metrics-grid"><div class="empty">Loading…</div></div>
+</div>
+
+<script>
+const BASE = '';
+let currentPage = 'runs';
+let selectedRunId = null;
+
+function showPage(name, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  if (el) el.classList.add('active');
+  currentPage = name;
+  refresh();
+}
+
+async function apiFetch(path) {
+  try { const r = await fetch(BASE + path); return r.ok ? r.json() : null; }
+  catch { return null; }
+}
+async function apiText(path) {
+  try { const r = await fetch(BASE + path); return r.ok ? r.text() : ''; }
+  catch { return ''; }
+}
+
+function fmt(ms) {
+  if (!ms) return '—';
+  const d = new Date(ms);
+  return d.toLocaleTimeString('en-GB', {hour12:false}) + '.' + String(d.getMilliseconds()).padStart(3,'0');
+}
+function dur(ms) {
+  if (!ms) return '—';
+  if (ms < 1000) return ms + 'ms';
+  if (ms < 60000) return (ms/1000).toFixed(1) + 's';
+  return Math.floor(ms/60000) + 'm ' + Math.floor((ms%60000)/1000) + 's';
+}
+function badge(status) {
+  return `<span class="badge badge-${status}">${status.replace('_',' ')}</span>`;
+}
+
+// ── RUNS ──────────────────────────────────────────────────────────────────────
+async function loadRuns() {
+  const data = await apiFetch('/runs');
+  const el = document.getElementById('runs-body');
+  if (!data || !data.runs || data.runs.length === 0) {
+    el.innerHTML = '<div class="empty">No runs yet. Start an agent with <code>--agentic</code> or <code>--demo</code></div>'; return;
+  }
+  let html = `<table><thead><tr><th>Run ID</th><th>Agent</th><th>Status</th><th>Started</th><th>Duration</th><th></th></tr></thead><tbody>`;
+  for (const r of data.runs) {
+    html += `<tr>
+      <td style="font-family:monospace;font-size:12px">${r.runId.substring(0,8)}…</td>
+      <td>${r.agentId}</td>
+      <td>${badge(r.status)}</td>
+      <td>${fmt(r.startedAtMs)}</td>
+      <td>${dur(r.durationMs)}</td>
+      <td><button class="btn btn-link" onclick="viewRun('${r.runId}')">Details →</button></td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+async function viewRun(runId) {
+  const data = await apiFetch('/report/' + runId);
+  const el = document.getElementById('runs-body');
+  if (!data) { el.innerHTML = '<div class="empty">Could not load report for ' + runId + '</div>'; return; }
+
+  let stepsHtml = '';
+  if (data.steps && data.steps.length > 0) {
+    stepsHtml = '<table class="steps-table"><thead><tr><th>Tool</th><th>Status</th><th>Duration</th><th>Args</th><th>Result/Error</th></tr></thead><tbody>';
+    for (const s of data.steps) {
+      const args = s.argsJson ? `<pre>${s.argsJson}</pre>` : '—';
+      const result = s.resultJson ? `<pre>${s.resultJson}</pre>` : (s.errorCode ? `<span style="color:var(--red)">${s.errorCode}: ${s.detail||''}</span>` : '—');
+      stepsHtml += `<tr><td>${s.toolName}</td><td>${badge(s.status)}</td><td>${dur(s.durationMs)}</td><td>${args}</td><td>${result}</td></tr>`;
+    }
+    stepsHtml += '</tbody></table>';
+  } else stepsHtml = '<div class="empty">No steps recorded</div>';
+
+  el.innerHTML = `
+    <button class="btn" style="margin-bottom:16px" onclick="loadRuns()">← Back to runs</button>
+    <div class="card">
+      <div class="meta">
+        <div class="meta-item">Run ID <span>${data.runId}</span></div>
+        <div class="meta-item">Agent <span>${data.agentId}</span></div>
+        <div class="meta-item">Status <span>${badge(data.status)}</span></div>
+        <div class="meta-item">Started <span>${fmt(data.startedAtMs)}</span></div>
+        <div class="meta-item">Duration <span>${dur(data.durationMs)}</span></div>
+        <div class="meta-item">Steps <span>${data.stepCount} (${data.failedSteps} failed)</span></div>
+      </div>
+      <h3>Steps</h3>${stepsHtml}
+    </div>`;
+}
+
+// ── APPROVALS ─────────────────────────────────────────────────────────────────
+async function loadApprovals() {
+  const data = await apiFetch('/approvals');
+  const el = document.getElementById('approvals-body');
+  if (!data || data.length === 0) {
+    el.innerHTML = '<div class="empty">No pending approvals 🎉</div>'; return;
+  }
+  let html = `<table><thead><tr><th>ID</th><th>Run</th><th>Tool</th><th>Risk</th><th>Preview</th><th>Actions</th></tr></thead><tbody>`;
+  for (const a of data) {
+    html += `<tr>
+      <td style="font-family:monospace;font-size:11px">${a.approvalId.substring(0,8)}…</td>
+      <td style="font-family:monospace;font-size:11px">${a.runId.substring(0,8)}…</td>
+      <td>${a.toolName || '—'}</td>
+      <td><span style="color:${a.riskScore>=80?'var(--red)':a.riskScore>=50?'var(--yellow)':'var(--green)'}">${a.riskScore}/100</span></td>
+      <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.impactPreview || '—'}</td>
+      <td style="display:flex;gap:8px">
+        <button class="btn btn-approve" onclick="decide('${a.approvalId}','approve')">✓ Approve</button>
+        <button class="btn btn-reject"  onclick="decide('${a.approvalId}','reject')">✗ Reject</button>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+async function decide(id, action) {
+  await fetch(BASE + '/approvals/' + id + '/' + action, {method: 'POST'});
+  loadApprovals();
+}
+
+// ── METRICS ───────────────────────────────────────────────────────────────────
+async function loadMetrics() {
+  const text = await apiText('/metrics');
+  const el = document.getElementById('metrics-body');
+  if (!text) { el.innerHTML = '<div class="empty">Could not load metrics</div>'; return; }
+
+  const metrics = {};
+  for (const line of text.split('\n')) {
+    if (line.startsWith('#') || !line.trim()) continue;
+    const [name, val] = line.split(' ');
+    if (name && val) metrics[name] = val;
+  }
+
+  const items = [
+    ['runs_started_total',       'Runs Started',     '🚀'],
+    ['runs_completed_total',     'Completed',        '✅'],
+    ['runs_failed_total',        'Failed',           '❌'],
+    ['runs_crashed_total',       'Crashed',          '💥'],
+    ['approvals_requested_total','Approvals',        '🔐'],
+    ['approvals_approved_total', 'Approved',         '👍'],
+    ['tool_calls_total',         'Tool Calls',       '🔧'],
+    ['tool_calls_blocked_total', 'Blocked',          '🚫'],
+    ['tokens_input_total',       'Tokens In',        '📥'],
+    ['tokens_output_total',      'Tokens Out',       '📤'],
+    ['watchdog_crashes_total',   'Watchdog Fixes',   '🐕'],
+  ];
+
+  el.className = 'metrics-grid';
+  el.innerHTML = items.map(([key, label, icon]) => {
+    const val = metrics['agentshell_' + key] ?? '0';
+    return `<div class="metric-card"><div class="val">${icon} ${val}</div><div class="lbl">${label}</div></div>`;
+  }).join('');
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+function refresh() {
+  if (currentPage === 'runs' && !selectedRunId) loadRuns();
+  else if (currentPage === 'approvals') loadApprovals();
+  else if (currentPage === 'metrics') loadMetrics();
+}
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

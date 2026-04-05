@@ -1,5 +1,6 @@
 package dev.agentshell.observability
 
+import dev.agentshell.state.InMemoryStateStore
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -15,7 +16,7 @@ class MetricsServerTest {
     @BeforeEach
     fun start() {
         MetricsCollector.reset()
-        server = MetricsServer(port = 19091)
+        server = MetricsServer(port = 19091, stateStore = InMemoryStateStore())
         server.start()
         Thread.sleep(100)
     }
@@ -49,8 +50,17 @@ class MetricsServerTest {
     }
 
     @Test
-    fun `report endpoint returns 400 when runId missing`() {
-        val (code, _) = get("/report/")
-        assertTrue(code == 400 || code == 404)
+    fun `ui endpoint returns HTML dashboard`() {
+        val (code, body) = get("/ui")
+        assertEquals(200, code)
+        assertTrue(body.contains("AgentShell"), "Expected AgentShell in page title")
+        assertTrue(body.contains("<html"), "Expected HTML response")
+    }
+
+    @Test
+    fun `runs endpoint returns JSON`() {
+        val (code, body) = get("/runs")
+        assertEquals(200, code)
+        assertTrue(body.contains("\"runs\""))
     }
 }

@@ -1,0 +1,19 @@
+name: git-workflow
+description: "Commits staged changes and prepares a PR description"
+riskThreshold: 80
+maxIterations: 10
+
+goal: |
+  Complete a git workflow for staged changes:
+  1. Run `git diff --staged --stat` to see what will be committed
+  2. Run `git log --oneline -5` to understand recent history and commit style
+  3. Generate a conventional commit message (feat/fix/chore/refactor/docs)
+  4. Run `git commit -m "<message>"` to commit
+  5. Print a PR description with: title, summary, changes list, testing notes
+
+systemPrompt: |
+  You are a developer following conventional commits (https://www.conventionalcommits.org).
+  Commit message format: <type>(<scope>): <description>
+  Types: feat, fix, docs, refactor, test, chore, ci
+  Keep commit messages under 72 characters.
+  PR descriptions should be clear and factual.

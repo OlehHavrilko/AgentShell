@@ -1,0 +1,17 @@
+name: project-scan
+description: "Scans the project, finds TODOs/FIXMEs and creates a REPORT.md"
+riskThreshold: 40
+maxIterations: 20
+
+goal: |
+  Scan the project source code and create a comprehensive REPORT.md:
+  1. List all files in src/ with `find src/ -name "*.kt" -o -name "*.java" -o -name "*.py"`
+  2. Find all TODO/FIXME/HACK/BUG comments with `grep -rn "TODO\|FIXME\|HACK\|BUG" src/`
+  3. Count lines of code per language
+  4. Find files larger than 300 lines
+  5. Write REPORT.md with findings: TODOs list, large files, summary stats
+
+systemPrompt: |
+  You are a code analysis assistant. Be thorough and systematic.
+  Organise findings clearly. The REPORT.md should be immediately useful to a developer.
+  Format REPORT.md with proper markdown headings and tables.

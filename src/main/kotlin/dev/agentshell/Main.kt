@@ -22,6 +22,7 @@ import dev.agentshell.security.SecretsVault
 import dev.agentshell.state.StateStore
 import dev.agentshell.state.sqlite.DatabaseManager
 import dev.agentshell.state.sqlite.SqliteStateStore
+import dev.agentshell.workflow.AgentPresetLoader
 import dev.agentshell.workflow.WorkflowLoader
 import org.slf4j.LoggerFactory
 import java.io.File
@@ -56,8 +57,9 @@ fun main(args: Array<String>) {
 
     val metricsServer = config.metricsPort?.let { port ->
         val reportGen = RunReportGenerator(store, auditTrail)
-        MetricsServer(port, reportGen).also {
+        MetricsServer(port, reportGen, store).also {
             it.start()
+            println("Dashboard:       http://localhost:$port/ui")
             println("Metrics server:  http://localhost:$port/metrics")
             println("Run reports:     http://localhost:$port/report/{runId}")
         }
@@ -93,6 +95,7 @@ fun main(args: Array<String>) {
                 AgentRunner.AgenticConfig(
                     agentId = config.agentId,
                     goal = config.goal,
+                    systemPrompt = config.agenticSystemPrompt,
                     riskThreshold = config.riskThreshold,
                     maxIterations = config.maxIterations,
                 )
@@ -122,6 +125,7 @@ private data class CliConfig(
     val gateway: LlmGateway?,
     val goal: String?,
     val maxIterations: Int,
+    val agenticSystemPrompt: String = AgentRunner.DEFAULT_SYSTEM_PROMPT,
 )
 
 private fun parseArgs(args: Array<String>): CliConfig? {
@@ -141,9 +145,10 @@ private fun parseArgs(args: Array<String>): CliConfig? {
         System.err.println("""
             Usage: agentshell --agent <id> [options]
 
-            Scripted mode (workflow file):
-              --workflow <file>         Load steps from .yaml/.yml/.json
-              --demo                    Run built-in demo workflow
+            Preset mode (ready-made agents):
+              --preset <name>           Use a built-in agent preset
+                                        Built-in: code-review, git-workflow, project-scan
+              --preset <path.yaml>      Load preset from a file
 
             Agentic mode (LLM-driven):
               --agentic                 Enable LLM-driven agentic loop
@@ -153,11 +158,16 @@ private fun parseArgs(args: Array<String>): CliConfig? {
               --ollama-url <url>        Ollama base URL (default: http://localhost:11434)
               --max-iterations <n>      Max agentic loop iterations (default: 50)
 
+            Scripted mode (workflow file):
+              --workflow <file>         Load steps from .yaml/.yml/.json
+              --demo                    Run built-in demo workflow
+
             Common options:
               --db <path>               SQLite database path
               --risk-threshold <0-100>  Approval threshold (default: 60)
               --approval-ttl-ms <ms>    Approval TTL (default: 3600000)
-              --approval-port <port>    Start approval HTTP server
+              --approval-port <port>    Start approval HTTP server (default: disabled)
+              --metrics-port <port>     Start metrics+UI server (default: disabled)
         """.trimIndent())
         return null
     }
@@ -172,9 +182,29 @@ private fun parseArgs(args: Array<String>): CliConfig? {
     val maxIterations = map["max-iterations"]?.toIntOrNull() ?: 50
 
     // ─── Agentic mode ──────────────────────────────────────────────────────
-    if (map.containsKey("agentic")) {
-        val goal = map["goal"] ?: run {
-            System.err.println("Error: --goal <text> is required in --agentic mode")
+    if (map.containsKey("agentic") || map.containsKey("preset")) {
+        // --preset loads goal+systemPrompt from YAML, --goal overrides
+        var goal: String? = map["goal"]
+        var systemPrompt = AgentRunner.DEFAULT_SYSTEM_PROMPT
+        var presetMaxIter = maxIterations
+        var presetThreshold = riskThreshold
+
+        if (map.containsKey("preset")) {
+            val presetName = map["preset"]!!
+            val preset = try { AgentPresetLoader.load(presetName) } catch (e: Exception) {
+                System.err.println("Error loading preset '$presetName': ${e.message}")
+                System.err.println("Built-in presets: ${AgentPresetLoader.listBuiltIn().joinToString(", ")}")
+                return null
+            }
+            if (goal == null) goal = preset.goal.trim()
+            systemPrompt = preset.systemPrompt.trim().ifBlank { systemPrompt }
+            presetMaxIter = map["max-iterations"]?.toIntOrNull() ?: preset.maxIterations
+            presetThreshold = map["risk-threshold"]?.toIntOrNull() ?: preset.riskThreshold
+            println("Loaded preset '${preset.name}': ${preset.description}")
+        }
+
+        if (goal == null) {
+            System.err.println("Error: --goal <text> is required in --agentic mode (or use --preset <name>)")
             return null
         }
         val provider = map["provider"] ?: run {
@@ -185,9 +215,10 @@ private fun parseArgs(args: Array<String>): CliConfig? {
         val gateway = buildGateway(provider, model, map) ?: return null
         return CliConfig(
             agentId = agentId, dbPath = dbPath, approvalTtlMs = approvalTtlMs,
-            approvalPort = approvalPort, metricsPort = metricsPort, riskThreshold = riskThreshold,
+            approvalPort = approvalPort, metricsPort = metricsPort, riskThreshold = presetThreshold,
             mode = RunMode.AGENTIC, runConfig = null,
-            gateway = gateway, goal = goal, maxIterations = maxIterations,
+            gateway = gateway, goal = goal, maxIterations = presetMaxIter,
+            agenticSystemPrompt = systemPrompt,
         )
     }
 

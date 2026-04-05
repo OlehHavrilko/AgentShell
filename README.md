@@ -4,6 +4,39 @@ A resume-first, approval-gated agent runtime for safe autonomous tool execution 
 
 Supports scripted YAML pipelines **and** fully autonomous LLM-driven agentic loops with MCP tool integration.
 
+## Quickstart
+
+```bash
+git clone https://github.com/OlehHavrilko/AgentShell
+cd AgentShell
+./scripts/demo.sh        # installs Ollama, pulls model, runs project-scan preset
+# open http://localhost:9090/ui for the Web UI dashboard
+```
+
+Or with Docker:
+
+```bash
+docker compose up        # builds fat JAR, starts agent + web UI on port 9090
+```
+
+## Agent Presets
+
+Built-in presets for common tasks — no prompt engineering needed:
+
+| Preset | Description |
+|--------|-------------|
+| `code-review` | `git diff HEAD~1`, analyses changed files, outputs inline review |
+| `git-workflow` | writes conventional-commit message + PR description |
+| `project-scan` | scans for TODOs/FIXMEs, writes `REPORT.md` |
+
+```bash
+# Run a preset
+./gradlew run --args="--agent dev-bot --preset code-review --provider ollama"
+
+# Override goal
+./gradlew run --args="--agent dev-bot --preset git-workflow --goal 'Write PR for feature/auth' --provider openai"
+```
+
 ## Architecture
 
 ```
@@ -91,7 +124,9 @@ OPENROUTER_API_KEY=... ./gradlew run --args="--agent dev-bot --agentic --goal 'R
 | `--risk-threshold <0-100>` | `60` | Score at which approval is required |
 | `--approval-ttl-ms <ms>` | `3600000` | Approval TTL (auto-reject after) |
 | `--approval-port <port>` | — | Start embedded approval HTTP server |
+| `--metrics-port <port>` | — | Start metrics/UI HTTP server |
 | `--workflow <file>` | — | Load steps from YAML/JSON workflow file |
+| `--preset <name>` | — | Use a built-in agent preset (`code-review`, `git-workflow`, `project-scan`) |
 | `--demo` | — | Run a single harmless demo step |
 | `--agentic` | — | Enable LLM-driven agentic loop |
 | `--goal <text>` | — | Goal description for agentic mode |
@@ -143,6 +178,23 @@ rules:
 ```
 
 Rule fields: `tool` (exact match), `pattern` (regex on args JSON), `score` (set), `addScore` (delta), `requireApproval`, `block`.
+
+## Web UI & Observability
+
+Start with `--metrics-port 9090`.
+
+```bash
+./gradlew run --args="--agent dev-bot --preset project-scan --provider ollama --metrics-port 9090"
+# open http://localhost:9090/ui
+```
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /ui` | Dark-theme dashboard (Runs / Approvals / Metrics tabs) |
+| `GET /runs` | JSON list of all runs |
+| `GET /report/{runId}` | Full JSON timeline for a run |
+| `GET /metrics` | Prometheus text metrics |
+| `GET /health` | Liveness check |
 
 ## Approval HTTP API
 
