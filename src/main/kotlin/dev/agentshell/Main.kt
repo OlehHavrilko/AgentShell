@@ -8,8 +8,15 @@ import dev.agentshell.llm.LlmGateway
 import dev.agentshell.llm.OllamaGateway
 import dev.agentshell.llm.OpenAiGateway
 import dev.agentshell.llm.OpenRouterGateway
+import dev.agentshell.memory.InMemoryMemoryStore
+import dev.agentshell.memory.MemoryAugmentedGateway
+import dev.agentshell.memory.MemoryStore
+import dev.agentshell.memory.SqliteMemoryStore
 import dev.agentshell.observability.MetricsServer
 import dev.agentshell.observability.MetricsCollector
+import dev.agentshell.orchestrator.AgentSpec
+import dev.agentshell.orchestrator.Orchestrator
+import dev.agentshell.orchestrator.OrchestratorPlanLoader
 import dev.agentshell.report.RunReportGenerator
 import dev.agentshell.runtime.AgentRunner
 import dev.agentshell.runtime.AgentRuntime
@@ -46,6 +53,10 @@ fun main(args: Array<String>) {
     val heartbeat = HeartbeatService(store)
     val approvalGate = ApprovalGate(ttlMs = config.approvalTtlMs)
 
+    val memoryStore: MemoryStore? = if (config.enableMemory) {
+        SqliteMemoryStore(db).also { println("Memory:          enabled (SQLite)") }
+    } else null
+
     val watchdog = WatchdogService(store, auditTrail = auditTrail).also { it.start() }
 
     val approvalServer = config.approvalPort?.let { port ->
@@ -65,6 +76,13 @@ fun main(args: Array<String>) {
         }
     }
 
+    // Wrap gateway with memory augmentation if enabled
+    val effectiveGateway = if (config.gateway != null && memoryStore != null) {
+        MemoryAugmentedGateway(config.gateway, memoryStore).also {
+            println("Memory:          augmenting gateway with past experiences")
+        }
+    } else config.gateway
+
     val runner = AgentRunner(
         stateStore = store,
         dispatcher = dispatcher,
@@ -74,7 +92,7 @@ fun main(args: Array<String>) {
         heartbeat = heartbeat,
         runtime = AgentRuntime(store),
         auditTrail = auditTrail,
-        gateway = config.gateway,
+        gateway = effectiveGateway,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread({
@@ -87,10 +105,37 @@ fun main(args: Array<String>) {
         log.info("AgentShell shut down cleanly")
     }, "agentshell-shutdown"))
 
+    // ORCHESTRATE mode — run an OrchestratorPlan
+    if (config.mode == RunMode.ORCHESTRATE) {
+        requireNotNull(config.orchestratePlanPath) { "--orchestrate requires a plan file path" }
+        val plan = OrchestratorPlanLoader.load(config.orchestratePlanPath)
+        println("Orchestrating plan '${plan.name}' with ${plan.agents.size} agents...")
+
+        val orchestrator = Orchestrator(
+            stateStore = store,
+            gatewayFactory = { spec ->
+                val provider = spec.provider.ifBlank { config.orchestrateProvider }
+                val model = spec.model ?: config.orchestrateModel
+                buildGateway(provider, model, emptyMap())
+            },
+            auditTrailFactory = { _ -> auditTrail },
+            memoryStore = memoryStore
+        )
+        val orchResult = orchestrator.run(plan)
+        orchestrator.shutdown()
+
+        println("\n=== Orchestration Result ===")
+        orchResult.agentResults.forEach { r ->
+            println("  ${r.agentId}: ${r.status}${if (r.summary != null) " — ${r.summary.take(80)}" else ""}")
+        }
+        println("============================")
+        exitProcess(if (orchResult.success) 0 else 1)
+    }
+
     val outcome = when (config.mode) {
         RunMode.AGENTIC -> {
             requireNotNull(config.goal) { "--goal is required for --agentic mode" }
-            requireNotNull(config.gateway) { "--provider is required for --agentic mode" }
+            requireNotNull(effectiveGateway) { "--provider is required for --agentic mode" }
             runner.executeAgentic(
                 AgentRunner.AgenticConfig(
                     agentId = config.agentId,
@@ -102,6 +147,7 @@ fun main(args: Array<String>) {
             ).also { if (it.finalMessage != null) println("\n=== Agent response ===\n${it.finalMessage}\n=====================") }
         }
         RunMode.SCRIPTED -> runner.execute(config.runConfig!!)
+        RunMode.ORCHESTRATE -> error("unreachable")
     }
 
     println("Run finished: runId=${outcome.runId} status=${outcome.status} steps=${outcome.results.size}")
@@ -109,7 +155,7 @@ fun main(args: Array<String>) {
     exitProcess(if (outcome.status.name == "COMPLETED") 0 else 1)
 }
 
-enum class RunMode { SCRIPTED, AGENTIC }
+enum class RunMode { SCRIPTED, AGENTIC, ORCHESTRATE }
 
 private data class CliConfig(
     val agentId: String,
@@ -126,6 +172,12 @@ private data class CliConfig(
     val goal: String?,
     val maxIterations: Int,
     val agenticSystemPrompt: String = AgentRunner.DEFAULT_SYSTEM_PROMPT,
+    // MEMORY
+    val enableMemory: Boolean = false,
+    // ORCHESTRATE mode
+    val orchestratePlanPath: String? = null,
+    val orchestrateProvider: String = "ollama",
+    val orchestrateModel: String? = null,
 )
 
 private fun parseArgs(args: Array<String>): CliConfig? {
@@ -157,6 +209,13 @@ private fun parseArgs(args: Array<String>): CliConfig? {
               --model <name>            Model override (e.g. gpt-4o, gemini-2.0-flash)
               --ollama-url <url>        Ollama base URL (default: http://localhost:11434)
               --max-iterations <n>      Max agentic loop iterations (default: 50)
+              --memory                  Enable agent memory (injects past run context)
+
+            Multi-agent orchestration:
+              --orchestrate <plan.yaml> Run an orchestrator plan (multi-agent pipeline)
+              --memory                  Share memory store across all agents in plan
+              --provider <name>         Default provider for agents (can override per-agent in YAML)
+              --model <name>            Default model for agents
 
             Scripted mode (workflow file):
               --workflow <file>         Load steps from .yaml/.yml/.json
@@ -180,6 +239,22 @@ private fun parseArgs(args: Array<String>): CliConfig? {
     val approvalPort = map["approval-port"]?.toIntOrNull()
     val metricsPort  = map["metrics-port"]?.toIntOrNull()
     val maxIterations = map["max-iterations"]?.toIntOrNull() ?: 50
+
+    // ─── Orchestrate mode ──────────────────────────────────────────────────
+    if (map.containsKey("orchestrate")) {
+        val planPath = map["orchestrate"]!!
+        val enableMemory = map.containsKey("memory")
+        return CliConfig(
+            agentId = agentId, dbPath = dbPath, approvalTtlMs = approvalTtlMs,
+            approvalPort = approvalPort, metricsPort = metricsPort, riskThreshold = riskThreshold,
+            mode = RunMode.ORCHESTRATE, runConfig = null,
+            gateway = null, goal = null, maxIterations = maxIterations,
+            enableMemory = enableMemory,
+            orchestratePlanPath = planPath,
+            orchestrateProvider = map["provider"] ?: "ollama",
+            orchestrateModel = map["model"],
+        )
+    }
 
     // ─── Agentic mode ──────────────────────────────────────────────────────
     if (map.containsKey("agentic") || map.containsKey("preset")) {
@@ -213,12 +288,14 @@ private fun parseArgs(args: Array<String>): CliConfig? {
         }
         val model = map["model"]
         val gateway = buildGateway(provider, model, map) ?: return null
+        val enableMemory = map.containsKey("memory")
         return CliConfig(
             agentId = agentId, dbPath = dbPath, approvalTtlMs = approvalTtlMs,
             approvalPort = approvalPort, metricsPort = metricsPort, riskThreshold = presetThreshold,
             mode = RunMode.AGENTIC, runConfig = null,
             gateway = gateway, goal = goal, maxIterations = presetMaxIter,
             agenticSystemPrompt = systemPrompt,
+            enableMemory = enableMemory,
         )
     }
 

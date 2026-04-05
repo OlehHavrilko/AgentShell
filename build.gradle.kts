@@ -18,6 +18,7 @@ dependencies {
     runtimeOnly("ch.qos.logback:logback-classic:1.5.6")
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testImplementation("io.mockk:mockk:1.13.10")
 }
 
 application {

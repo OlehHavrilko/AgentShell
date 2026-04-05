@@ -1,0 +1,17 @@
+name: code-review-then-commit
+agents:
+  - id: reviewer
+    preset: code-review
+    provider: ollama
+    model: qwen2.5-coder:7b
+    riskThreshold: 60
+    maxIterations: 10
+
+  - id: committer
+    preset: git-workflow
+    provider: ollama
+    model: qwen2.5-coder:7b
+    dependsOn:
+      - reviewer
+    riskThreshold: 70
+    maxIterations: 8
