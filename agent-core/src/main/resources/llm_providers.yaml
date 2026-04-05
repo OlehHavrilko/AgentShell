@@ -1,0 +1,74 @@
+providers:
+  - id: openai
+    enabled: false
+    apiKey: "${OPENAI_API_KEY}"
+    model: "gpt-4o-mini"
+    maxTokens: 4096
+    temperature: 0.7
+
+  - id: anthropic
+    enabled: false
+    apiKey: "${ANTHROPIC_API_KEY}"
+    model: "claude-3-5-sonnet-20241022"
+    maxTokens: 4096
+    temperature: 0.7
+
+  - id: vertex_ai
+    enabled: false
+    projectId: "${GOOGLE_CLOUD_PROJECT}"
+    location: "us-central1"
+    model: "gemini-1.5-flash"
+
+  - id: azure_openai
+    enabled: false
+    endpoint: "${AZURE_OPENAI_ENDPOINT}"
+    apiKey: "${AZURE_OPENAI_KEY}"
+    deployment: "gpt-4o"
+
+  - id: ollama
+    enabled: true
+    model: "llama3.2"
+    host: "http://127.0.0.1:11434"
+    maxTokens: 4096
+    temperature: 0.7
+
+  - id: huggingface
+    enabled: false
+    apiKey: "${HF_API_KEY}"
+    model: "meta-llama/Meta-Llama-3.2-3B-Instruct"
+    maxTokens: 2048
+    temperature: 0.7
+
+  - id: cohere
+    enabled: false
+    apiKey: "${COHERE_API_KEY}"
+    model: "command-r-plus"
+    maxTokens: 4096
+    temperature: 0.7
+
+  - id: mistral
+    enabled: false
+    apiKey: "${MISTRAL_API_KEY}"
+    model: "mistral-large-latest"
+    maxTokens: 4096
+    temperature: 0.7
+
+  - id: groq
+    enabled: false
+    apiKey: "${GROQ_API_KEY}"
+    model: "llama-3.3-70b-versatile"
+    maxTokens: 4096
+    temperature: 0.7
+
+  - id: deepseek
+    enabled: false
+    apiKey: "${DEEPSEEK_API_KEY}"
+    model: "deepseek-chat"
+    maxTokens: 4096
+    temperature: 0.7
+
+  - id: llama_cpp
+    enabled: false
+    modelPath: "/data/models/llama-3.2-1b-q8_0.gguf"
+    binaryPath: "llama-cli"
+    threads: 4

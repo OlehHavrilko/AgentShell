@@ -62,7 +62,8 @@ fun MainScreen() {
             composable(NavRoute.Chat.route) { ChatScreen() }
             composable(NavRoute.Runs.route) { RunsScreen(navController) }
             composable(NavRoute.Memory.route) { MemoryScreen() }
-            composable(NavRoute.Settings.route) { SettingsScreen() }
+            composable(NavRoute.Settings.route) { SettingsScreen(navController) }
+            composable("providers") { ProvidersScreen() }
             composable("run_detail/{runId}") { backStackEntry ->
                 RunDetailScreen(runId = backStackEntry.arguments?.getString("runId") ?: "")
             }

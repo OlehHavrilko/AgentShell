@@ -9,6 +9,16 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+data class ProviderUiState(
+    val id: String,
+    val displayName: String,
+    val isLocal: Boolean,
+    val enabled: Boolean,
+    val apiKey: String,
+    val model: String,
+    val host: String,
+)
+
 class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("agentshell", android.content.Context.MODE_PRIVATE)
 
@@ -59,6 +69,37 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     fun importPackage() {
         viewModelScope.launch {
             // TODO: open file picker and call PackageHelper.importPackage()
+        }
+    }
+
+    private val _providers = MutableStateFlow<List<ProviderUiState>>(buildDefaultProviders())
+    val providers = _providers.asStateFlow()
+
+    private fun buildDefaultProviders() = listOf(
+        ProviderUiState("openai", "OpenAI", false, prefs.getBoolean("prov_enabled_openai", false), prefs.getString("prov_apikey_openai", "") ?: "", prefs.getString("prov_model_openai", "gpt-4o-mini") ?: "", ""),
+        ProviderUiState("anthropic", "Anthropic (Claude)", false, prefs.getBoolean("prov_enabled_anthropic", false), prefs.getString("prov_apikey_anthropic", "") ?: "", prefs.getString("prov_model_anthropic", "claude-3-5-sonnet-20241022") ?: "", ""),
+        ProviderUiState("ollama", "Ollama (Local)", true, prefs.getBoolean("prov_enabled_ollama", true), "", prefs.getString("prov_model_ollama", "llama3.2") ?: "", prefs.getString("prov_host_ollama", "http://localhost:11434") ?: ""),
+        ProviderUiState("groq", "Groq (Ultra-fast)", false, prefs.getBoolean("prov_enabled_groq", false), prefs.getString("prov_apikey_groq", "") ?: "", prefs.getString("prov_model_groq", "llama-3.3-70b-versatile") ?: "", ""),
+        ProviderUiState("mistral", "Mistral AI", false, prefs.getBoolean("prov_enabled_mistral", false), prefs.getString("prov_apikey_mistral", "") ?: "", prefs.getString("prov_model_mistral", "mistral-large-latest") ?: "", ""),
+        ProviderUiState("deepseek", "DeepSeek", false, prefs.getBoolean("prov_enabled_deepseek", false), prefs.getString("prov_apikey_deepseek", "") ?: "", prefs.getString("prov_model_deepseek", "deepseek-chat") ?: "", ""),
+        ProviderUiState("huggingface", "Hugging Face", false, prefs.getBoolean("prov_enabled_huggingface", false), prefs.getString("prov_apikey_huggingface", "") ?: "", prefs.getString("prov_model_huggingface", "meta-llama/Meta-Llama-3.2-3B-Instruct") ?: "", ""),
+        ProviderUiState("cohere", "Cohere", false, prefs.getBoolean("prov_enabled_cohere", false), prefs.getString("prov_apikey_cohere", "") ?: "", prefs.getString("prov_model_cohere", "command-r-plus") ?: "", ""),
+        ProviderUiState("llama_cpp", "Llama.cpp (Local)", true, prefs.getBoolean("prov_enabled_llama_cpp", false), "", prefs.getString("prov_model_llama_cpp", "") ?: "", ""),
+    )
+
+    fun toggleProvider(id: String, enabled: Boolean) {
+        prefs.edit().putBoolean("prov_enabled_$id", enabled).apply()
+        _providers.value = _providers.value.map { if (it.id == id) it.copy(enabled = enabled) else it }
+    }
+
+    fun saveProviderConfig(id: String, apiKey: String, model: String, host: String) {
+        prefs.edit()
+            .putString("prov_apikey_$id", apiKey)
+            .putString("prov_model_$id", model)
+            .putString("prov_host_$id", host)
+            .apply()
+        _providers.value = _providers.value.map {
+            if (it.id == id) it.copy(apiKey = apiKey, model = model, host = host) else it
         }
     }
 }
