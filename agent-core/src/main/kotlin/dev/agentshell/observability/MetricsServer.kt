@@ -6,6 +6,10 @@ import dev.agentshell.report.RunReportGenerator
 import dev.agentshell.state.StateStore
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.slf4j.LoggerFactory
 import java.net.InetSocketAddress
 import java.util.concurrent.Executors
@@ -26,6 +30,7 @@ class MetricsServer(
     private val port: Int,
     private val reportGenerator: RunReportGenerator? = null,
     private val stateStore: StateStore? = null,
+    private val memoryStore: dev.agentshell.memory.MemoryStore? = null,
 ) {
     private val log = LoggerFactory.getLogger(MetricsServer::class.java)
     private val json = Json { prettyPrint = false; ignoreUnknownKeys = true }
@@ -91,6 +96,68 @@ class MetricsServer(
                 ex.respond(200, "application/json", reportGenerator.generateJson(runId))
             } catch (e: IllegalStateException) {
                 ex.respond(404, "application/json", """{"error":"${e.message}"}""")
+            }
+        }
+
+        // ── Memory REST API ────────────────────────────────────────────────
+        s.createContext("/memory") { ex ->
+            val path = ex.requestURI.path.removePrefix("/memory").trimStart('/')
+            val query = ex.requestURI.rawQuery
+                ?.split("&")
+                ?.associate { p -> p.split("=", limit = 2).let { it[0] to (it.getOrNull(1) ?: "") } }
+                ?: emptyMap()
+
+            when {
+                ex.requestMethod == "GET" && path == "search" -> {
+                    val q = query["query"]?.trim() ?: ""
+                    val topK = query["topK"]?.toIntOrNull() ?: 10
+                    val tag = query["tag"]?.trim()
+                    if (memoryStore == null) {
+                        ex.respond(503, "application/json", """{"error":"memory store not configured"}""")
+                        return@createContext
+                    }
+                    val results = if (!tag.isNullOrBlank()) memoryStore.searchByTag(tag, topK)
+                    else if (q.isNotBlank()) memoryStore.search(q, topK)
+                    else memoryStore.getAll().takeLast(topK)
+                    val items = results.joinToString(",") { e ->
+                        """{"id":"${e.id}","runId":"${e.runId}","agentId":"${e.agentId}","text":${
+                            json.encodeToString(e.text)
+                        },"tags":${json.encodeToString(e.tags)},"score":${e.score},"createdAtMs":${e.createdAt.toEpochMilli()}}"""
+                    }
+                    ex.respond(200, "application/json", """{"results":[$items],"total":${results.size}}""")
+                }
+                ex.requestMethod == "GET" && path == "entries" -> {
+                    val all = memoryStore?.getAll() ?: emptyList()
+                    val items = all.joinToString(",") { e ->
+                        """{"id":"${e.id}","runId":"${e.runId}","agentId":"${e.agentId}","tags":${
+                            json.encodeToString(e.tags)
+                        },"createdAtMs":${e.createdAt.toEpochMilli()}}"""
+                    }
+                    ex.respond(200, "application/json", """{"entries":[$items],"total":${all.size}}""")
+                }
+                ex.requestMethod == "POST" && path == "store" -> {
+                    if (memoryStore == null) {
+                        ex.respond(503, "application/json", """{"error":"memory store not configured"}""")
+                        return@createContext
+                    }
+                    val body = ex.requestBody.bufferedReader().readText()
+                    val obj = json.parseToJsonElement(body).jsonObject
+                    val entry = dev.agentshell.memory.MemoryEntry(
+                        id = obj["id"]?.jsonPrimitive?.content ?: java.util.UUID.randomUUID().toString(),
+                        runId = obj["runId"]?.jsonPrimitive?.content ?: "manual",
+                        agentId = obj["agentId"]?.jsonPrimitive?.content ?: "manual",
+                        text = obj["text"]?.jsonPrimitive?.content ?: "",
+                        tags = obj["tags"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList(),
+                        decayHalfLifeMs = obj["decayHalfLifeMs"]?.jsonPrimitive?.long ?: Long.MAX_VALUE,
+                    )
+                    memoryStore.store(entry)
+                    ex.respond(201, "application/json", """{"id":"${entry.id}"}""")
+                }
+                ex.requestMethod == "DELETE" && path == "clear" -> {
+                    memoryStore?.clear()
+                    ex.respond(200, "application/json", """{"ok":true}""")
+                }
+                else -> ex.respond(404, "application/json", """{"error":"not found — try GET /memory/search?query=... or GET /memory/entries"}""")
             }
         }
 

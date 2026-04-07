@@ -12,11 +12,13 @@ import java.util.concurrent.Executors
 import java.util.concurrent.Future
 
 /**
- * Orchestrates multiple agents defined in an OrchestratorPlan.
+ * Orchestrates multiple agents defined in an [OrchestratorPlan].
  *
- * - Resolves execution order via topological sort (respects dependsOn)
+ * - Resolves execution order via topological sort (respects `dependsOn`)
  * - Runs agents within a wave in parallel on a thread pool
- * - Injects upstream agent results into downstream agent goals as [UPSTREAM_RESULT]
+ * - Evaluates optional `condition` expressions before each agent
+ * - Supports `retry` configuration (maxAttempts, delayMs, retryOn statuses)
+ * - Injects upstream agent results into downstream agent goals
  * - Optionally integrates with MemoryStore for cross-agent memory
  */
 class Orchestrator(
@@ -53,14 +55,20 @@ class Orchestrator(
             log.info("Wave ${waveIdx + 1}/${waves.size}: running ${wave.map { it.id }}")
             val futures: List<Future<AgentResult>> = wave.map { spec ->
                 pool.submit<AgentResult> {
-                    runAgent(spec, resultsByAgent)
+                    // ── Evaluate condition ──────────────────────────────────
+                    if (spec.condition != null && !evaluateCondition(spec.condition, resultsByAgent)) {
+                        log.info("Agent '${spec.id}' SKIPPED — condition \"${spec.condition}\" not met")
+                        return@submit AgentResult(spec.id, "", "SKIPPED", "condition not met: ${spec.condition}")
+                    }
+                    // ── Retry loop ──────────────────────────────────────────
+                    runWithRetry(spec, resultsByAgent)
                 }
             }
             val waveResults = futures.map { it.get() }
             allResults.addAll(waveResults)
             waveResults.forEach { resultsByAgent[it.agentId] = it }
 
-            val failed = waveResults.filter { it.status != "COMPLETED" }
+            val failed = waveResults.filter { it.status !in setOf("COMPLETED", "SKIPPED") }
             if (failed.isNotEmpty()) {
                 log.warn("Wave ${waveIdx + 1} had failures: ${failed.map { it.agentId }}. Stopping.")
                 return OrchestrationResult(plan.name, allResults, success = false)
@@ -69,6 +77,42 @@ class Orchestrator(
 
         log.info("Orchestration '${plan.name}' completed. ${allResults.size} agents ran successfully.")
         return OrchestrationResult(plan.name, allResults, success = true)
+    }
+
+    private fun runWithRetry(spec: AgentSpec, upstreamResults: Map<String, AgentResult>): AgentResult {
+        val retryConf = spec.retry
+        var lastResult: AgentResult? = null
+        repeat(retryConf.maxAttempts) { attempt ->
+            if (lastResult != null && lastResult!!.status !in retryConf.retryOn) {
+                return lastResult!!  // done — no need to retry
+            }
+            if (attempt > 0) {
+                log.info("Agent '${spec.id}' retry attempt ${attempt + 1}/${retryConf.maxAttempts} (last=${lastResult?.status})")
+                if (retryConf.delayMs > 0) Thread.sleep(retryConf.delayMs)
+            }
+            lastResult = runAgent(spec, upstreamResults)
+        }
+        return lastResult!!
+    }
+
+    private fun evaluateCondition(condition: String, results: Map<String, AgentResult>): Boolean {
+        // Syntax: "<agentId>.<field> <op> <value>"
+        // ops: ==, !=, contains
+        val pattern = Regex("""(\w+)\.(status|summary)\s*(==|!=|contains)\s*(\S+)""")
+        val match = pattern.find(condition.trim()) ?: return true  // unparseable → pass
+        val (agentId, field, op, value) = match.destructured
+        val result = results[agentId] ?: return false
+        val actual = when (field) {
+            "status" -> result.status
+            "summary" -> result.summary ?: ""
+            else -> return false
+        }
+        return when (op) {
+            "==" -> actual == value
+            "!=" -> actual != value
+            "contains" -> actual.contains(value, ignoreCase = true)
+            else -> false
+        }
     }
 
     private fun runAgent(spec: AgentSpec, upstreamResults: Map<String, AgentResult>): AgentResult {

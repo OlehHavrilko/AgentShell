@@ -5,6 +5,20 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.io.File
 
+/**
+ * Retry configuration for an [AgentSpec].
+ *
+ * @param maxAttempts Total number of attempts including the first. Defaults to 1 (no retry).
+ * @param delayMs     Delay in ms between attempts.
+ * @param retryOn     Status values that trigger a retry (e.g. ["FAILED","CRASHED"]).
+ */
+@Serializable
+data class RetryConfig(
+    val maxAttempts: Int = 1,
+    val delayMs: Long = 0L,
+    val retryOn: List<String> = listOf("FAILED", "CRASHED"),
+)
+
 @Serializable
 data class AgentSpec(
     val id: String,
@@ -14,7 +28,23 @@ data class AgentSpec(
     val model: String? = null,
     val riskThreshold: Int = 60,
     val maxIterations: Int = 20,
-    @SerialName("dependsOn") val dependsOn: List<String> = emptyList()
+    @SerialName("dependsOn") val dependsOn: List<String> = emptyList(),
+    /**
+     * Optional condition expression evaluated against upstream results.
+     *
+     * Syntax: `<agentId>.<field> <op> <value>`
+     * Examples:
+     *   - `code_review.status == COMPLETED`  — run only if code_review succeeded
+     *   - `linter.status != FAILED`          — skip if linter failed
+     *   - `scanner.summary contains critical`
+     *
+     * If omitted, the agent always runs (subject to dependency resolution).
+     */
+    val condition: String? = null,
+    /**
+     * Retry policy. Defaults to single attempt (no retries).
+     */
+    val retry: RetryConfig = RetryConfig(),
 )
 
 @Serializable

@@ -1,5 +1,7 @@
 package com.agentshell.app.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,6 +21,13 @@ fun SettingsScreen(navController: NavController? = null, vm: SettingsViewModel =
     val sandboxEnabled by vm.sandboxEnabled.collectAsState()
     val termuxEnabled by vm.termuxEnabled.collectAsState()
     val sandboxStatus by vm.sandboxStatus.collectAsState()
+
+    // File picker for ZIP import
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let { vm.importPackage(it) }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -63,7 +72,7 @@ fun SettingsScreen(navController: NavController? = null, vm: SettingsViewModel =
         SettingsSection("Export / Import") {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { vm.exportPackage() }) { Text("Export ZIP") }
-                OutlinedButton(onClick = { vm.importPackage() }) { Text("Import ZIP") }
+                OutlinedButton(onClick = { importLauncher.launch("application/zip") }) { Text("Import ZIP") }
             }
         }
 

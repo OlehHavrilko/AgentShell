@@ -1,10 +1,12 @@
 package dev.agentshell.memory
 
-import java.util.UUID
+import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.sqrt
 
 /**
  * In-memory MemoryStore using TF-IDF cosine similarity for semantic search.
+ * Supports optional temporal decay per [MemoryEntry.decayHalfLifeMs].
  */
 class InMemoryMemoryStore : MemoryStore {
 
@@ -24,21 +26,42 @@ class InMemoryMemoryStore : MemoryStore {
         val allDocs = corpus.map { tokenize(it.text) }
         val idf = computeIdf(allDocs)
         val queryVec = tfidfVector(queryTokens, idf, allDocs)
+        val now = System.currentTimeMillis()
 
         return corpus
             .mapIndexed { i, entry ->
                 val docVec = tfidfVector(allDocs[i], idf, allDocs)
-                entry.copy(score = cosineSimilarity(queryVec, docVec))
+                val similarity = cosineSimilarity(queryVec, docVec)
+                val decayFactor = computeDecay(entry, now)
+                entry.copy(score = similarity * decayFactor)
             }
             .filter { it.score > 0.0 }
             .sortedByDescending { it.score }
             .take(topK)
     }
 
+    override fun searchByTag(tag: String, topK: Int): List<MemoryEntry> =
+        synchronized(entries) {
+            entries.filter { tag in it.tags }
+                .sortedByDescending { it.createdAt }
+                .take(topK)
+        }
+
+    override fun getAll(): List<MemoryEntry> =
+        synchronized(entries) { entries.toList() }
+
     override fun getByRunId(runId: String): List<MemoryEntry> =
         synchronized(entries) { entries.filter { it.runId == runId } }
 
     override fun clear() = synchronized(entries) { entries.clear() }
+
+    // ── Temporal decay ────────────────────────────────────────────────────────
+
+    private fun computeDecay(entry: MemoryEntry, nowMs: Long): Double {
+        if (entry.decayHalfLifeMs == Long.MAX_VALUE) return 1.0
+        val ageMs = (nowMs - entry.createdAt.toEpochMilli()).coerceAtLeast(0)
+        return exp(-ln(2.0) * ageMs / entry.decayHalfLifeMs)
+    }
 
     // ── TF-IDF helpers ─────────────────────────────────────────────────────────
 

@@ -9,5 +9,5 @@ data class AuditEntity(
     val runId: String,
     val type: String,
     val timestamp: Long,
-    val payload: String
+    val payload: String?
 )

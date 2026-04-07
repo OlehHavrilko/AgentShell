@@ -3,14 +3,21 @@ package com.agentshell.app.service
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.agentshell.app.AgentShellApp
-import com.agentshell.app.R
 import com.agentshell.app.ui.MainActivity
+import dev.agentshell.audit.AuditEvent
+import dev.agentshell.audit.AuditEventType
+import dev.agentshell.audit.AuditTrail
+import dev.agentshell.executor.ToolDispatcher
+import dev.agentshell.llm.LlmGateway
+import dev.agentshell.runtime.AgentRunner
+import dev.agentshell.state.InMemoryStateStore
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -44,37 +51,152 @@ class AgentRuntimeService : Service() {
         when (intent?.action) {
             ACTION_START_EMBEDDED -> startEmbedded()
             ACTION_START_TERMUX -> startExternal()
+            ACTION_START_JVM -> startJvmAgent(
+                goal = intent.getStringExtra(EXTRA_GOAL) ?: "Complete the task",
+                providerId = intent.getStringExtra(EXTRA_PROVIDER) ?: "ollama"
+            )
             ACTION_STOP -> stopSelf()
         }
         return START_STICKY
     }
 
+    // ── Embedded Proot mode ────────────────────────────────────────────────────
     private fun startEmbedded() {
         val sandbox = ProotSandbox(this).also { prootSandbox = it }
         scope.launch {
-            sandbox.start()
+            sandbox.start(outputToFlow = false)
                 .onSuccess {
-                    val ch = McpChannel(sandbox.process!!.inputStream, sandbox.process!!.outputStream)
+                    val ch = sandbox.openMcpChannel()
                     mcpChannel = ch
                     forwardEvents(ch)
                     updateNotification("Alpine sandbox running")
                 }
-                .onFailure { Log.e(TAG, "Failed to start sandbox", it) }
+                .onFailure { e -> Log.e(TAG, "Failed to start sandbox", e) }
         }
     }
 
+    // ── Termux mode ────────────────────────────────────────────────────────────
     private fun startExternal() {
         val connector = TermuxConnector(this).also { termuxConnector = it }
         scope.launch {
             runCatching {
                 connector.install()
                 connector.startServer()
-                delay(2_000) // wait for server to start
+                delay(2_000)
                 val ch = connector.connect()
                 mcpChannel = ch
                 forwardEvents(ch)
                 updateNotification("Termux agent running")
-            }.onFailure { Log.e(TAG, "Termux connection failed", it) }
+            }.onFailure { e -> Log.e(TAG, "Termux connection failed", e) }
+        }
+    }
+
+    // ── JVM-native agent mode ──────────────────────────────────────────────────
+    /**
+     * Runs [AgentRunner.executeAgentic] directly on the JVM (no Proot/Termux required).
+     * Events are emitted via [_events] so ChatViewModel can observe them.
+     */
+    fun startJvmAgent(goal: String, providerId: String) {
+        val gateway = buildGateway(providerId)
+        if (gateway == null) {
+            _events.tryEmit(AgentMessage("error", payload = "Unknown provider: $providerId"))
+            return
+        }
+
+        scope.launch(Dispatchers.IO) {
+            val stateStore = InMemoryStateStore()
+            var runId = "(unknown)"
+            val auditTrail = object : AuditTrail {
+                override fun record(event: AuditEvent) {
+                    val msg = when (event.eventType) {
+                        AuditEventType.RUN_STARTED -> {
+                            runId = event.runId
+                            AgentMessage("run_started", event.runId, "agentId=${event.detail}")
+                        }
+                        AuditEventType.STEP_STARTED ->
+                            AgentMessage("tool_start", event.runId,
+                                "${event.toolName} ${event.argsJson?.take(120)}")
+                        AuditEventType.STEP_COMPLETED ->
+                            AgentMessage("tool_result", event.runId,
+                                event.resultJson?.take(200))
+                        AuditEventType.STEP_FAILED ->
+                            AgentMessage("tool_error", event.runId,
+                                "${event.errorCode}: ${event.detail}")
+                        AuditEventType.APPROVAL_REQUESTED ->
+                            AgentMessage("approval_request", event.runId,
+                                "${event.stepId}|${event.detail}")
+                        AuditEventType.RUN_COMPLETED ->
+                            AgentMessage("run_complete", event.runId, event.detail)
+                        AuditEventType.RUN_FAILED, AuditEventType.RUN_CRASHED ->
+                            AgentMessage("error", event.runId, event.detail)
+                        else -> return
+                    }
+                    _events.tryEmit(msg)
+                }
+                override fun queryByRun(runId: String): List<AuditEvent> = emptyList()
+            }
+
+            val runner = AgentRunner(
+                stateStore = stateStore,
+                dispatcher = ToolDispatcher(),
+                auditTrail = auditTrail,
+                gateway = gateway,
+            )
+
+            updateNotification("Agent running [JVM/$providerId]…")
+            try {
+                val outcome = runner.executeAgentic(
+                    AgentRunner.AgenticConfig(
+                        agentId = "android-jvm",
+                        goal = goal,
+                        maxIterations = 30,
+                    )
+                )
+                val finalMsg = outcome.finalMessage ?: "[Run complete — ${outcome.status}]"
+                _events.tryEmit(AgentMessage("chat_response", outcome.runId, finalMsg))
+            } catch (e: Exception) {
+                Log.e(TAG, "JVM agent failed", e)
+                _events.tryEmit(AgentMessage("error", runId, e.message))
+            } finally {
+                updateNotification("Agent idle")
+            }
+        }
+    }
+
+    /** Build an [AndroidLlmGateway] for the given provider using stored prefs. */
+    private fun buildGateway(providerId: String): LlmGateway? {
+        val prefs = getSharedPreferences("agentshell", Context.MODE_PRIVATE)
+        return when (providerId) {
+            "openai" -> AndroidLlmGateway(
+                apiKey = prefs.getString("prov_apikey_openai", "") ?: "",
+                model = prefs.getString("prov_model_openai", "gpt-4o-mini") ?: "gpt-4o-mini",
+            ).takeIf { prefs.getString("prov_apikey_openai", "")!!.isNotBlank() }
+            "ollama" -> AndroidLlmGateway(
+                apiKey = "ollama",
+                model = prefs.getString("prov_model_ollama", "llama3.2") ?: "llama3.2",
+                baseUrl = (prefs.getString("prov_host_ollama", "http://localhost:11434") ?: "http://localhost:11434").trimEnd('/') + "/v1",
+            )
+            "groq" -> AndroidLlmGateway(
+                apiKey = prefs.getString("prov_apikey_groq", "") ?: "",
+                model = prefs.getString("prov_model_groq", "llama-3.3-70b-versatile") ?: "llama-3.3-70b-versatile",
+                baseUrl = "https://api.groq.com/openai/v1",
+            ).takeIf { prefs.getString("prov_apikey_groq", "")!!.isNotBlank() }
+            "deepseek" -> AndroidLlmGateway(
+                apiKey = prefs.getString("prov_apikey_deepseek", "") ?: "",
+                model = prefs.getString("prov_model_deepseek", "deepseek-chat") ?: "deepseek-chat",
+                baseUrl = "https://api.deepseek.com/v1",
+            ).takeIf { prefs.getString("prov_apikey_deepseek", "")!!.isNotBlank() }
+            "mistral" -> AndroidLlmGateway(
+                apiKey = prefs.getString("prov_apikey_mistral", "") ?: "",
+                model = prefs.getString("prov_model_mistral", "mistral-large-latest") ?: "mistral-large-latest",
+                baseUrl = "https://api.mistral.ai/v1",
+            ).takeIf { prefs.getString("prov_apikey_mistral", "")!!.isNotBlank() }
+            "openrouter" -> AndroidLlmGateway(
+                apiKey = prefs.getString("prov_apikey_openrouter", "") ?: "",
+                model = prefs.getString("prov_model_openrouter", "anthropic/claude-3.5-sonnet") ?: "anthropic/claude-3.5-sonnet",
+                baseUrl = "https://openrouter.ai/api/v1",
+            ).takeIf { prefs.getString("prov_apikey_openrouter", "")!!.isNotBlank() }
+            else -> null
         }
     }
 
@@ -123,15 +245,9 @@ class AgentRuntimeService : Service() {
     companion object {
         const val ACTION_START_EMBEDDED = "com.agentshell.action.START_EMBEDDED"
         const val ACTION_START_TERMUX = "com.agentshell.action.START_TERMUX"
+        const val ACTION_START_JVM = "com.agentshell.action.START_JVM"
         const val ACTION_STOP = "com.agentshell.action.STOP"
+        const val EXTRA_GOAL = "goal"
+        const val EXTRA_PROVIDER = "providerId"
     }
-}
-
-// Extension to expose process from ProotSandbox for McpChannel wiring
-val ProotSandbox.process: Process? get() {
-    return try {
-        val field = this.javaClass.getDeclaredField("process")
-        field.isAccessible = true
-        field.get(this) as? Process
-    } catch (e: Exception) { null }
 }

@@ -62,13 +62,23 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun exportPackage() {
         viewModelScope.launch {
-            // TODO: wire to PackageHelper.exportPackage()
+            val uri = com.agentshell.app.utils.PackageHelper.exportPackage(app)
+            if (uri != null) {
+                // Share the exported ZIP via system intent
+                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "application/zip"
+                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                app.startActivity(shareIntent)
+            }
         }
     }
 
-    fun importPackage() {
+    fun importPackage(uri: android.net.Uri) {
         viewModelScope.launch {
-            // TODO: open file picker and call PackageHelper.importPackage()
+            com.agentshell.app.utils.PackageHelper.importPackage(app, uri)
         }
     }
 
