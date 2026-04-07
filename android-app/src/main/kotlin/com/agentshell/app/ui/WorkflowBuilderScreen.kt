@@ -1,5 +1,6 @@
 package com.agentshell.app.ui
 
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -9,13 +10,20 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.agentshell.app.service.AgentRuntimeService
+import com.agentshell.app.workflow.WorkflowDraftStep
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
-data class WorkflowStep(val type: String, val params: String)
+private val workflowJson = Json { prettyPrint = false }
 
 @Composable
 fun WorkflowBuilderScreen() {
-    var steps by remember { mutableStateOf(listOf<WorkflowStep>()) }
+    val context = LocalContext.current
+    var steps by remember { mutableStateOf(listOf<WorkflowDraftStep>()) }
     var showAddDialog by remember { mutableStateOf(false) }
 
     if (showAddDialog) {
@@ -35,6 +43,12 @@ fun WorkflowBuilderScreen() {
         Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             Text("Workflow Builder", style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(8.dp))
+            Text(
+                "Supported steps: shell_exec, git_exec, file_write. For shell/git you can enter plain text; for file_write JSON is recommended.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(12.dp))
             if (steps.isEmpty()) {
                 Text("No steps yet. Tap + to add a step.", style = MaterialTheme.typography.bodyMedium)
             }
@@ -55,8 +69,14 @@ fun WorkflowBuilderScreen() {
             }
             if (steps.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = { /* TODO: save and run workflow */ }, Modifier.fillMaxWidth()) {
-                    Text("Run Workflow")
+                Button(onClick = {
+                    val intent = Intent(context, AgentRuntimeService::class.java).apply {
+                        action = AgentRuntimeService.ACTION_START_WORKFLOW
+                        putExtra(AgentRuntimeService.EXTRA_WORKFLOW_JSON, workflowJson.encodeToString(steps))
+                    }
+                    ContextCompat.startForegroundService(context, intent)
+                }, Modifier.fillMaxWidth()) {
+                    Text("Save And Run Workflow")
                 }
             }
         }
@@ -64,8 +84,8 @@ fun WorkflowBuilderScreen() {
 }
 
 @Composable
-fun AddStepDialog(onAdd: (WorkflowStep) -> Unit, onDismiss: () -> Unit) {
-    val stepTypes = listOf("shell", "git", "file", "llm", "approval")
+fun AddStepDialog(onAdd: (WorkflowDraftStep) -> Unit, onDismiss: () -> Unit) {
+    val stepTypes = listOf("shell_exec", "git_exec", "file_write")
     var selectedType by remember { mutableStateOf(stepTypes[0]) }
     var params by remember { mutableStateOf("") }
 
@@ -84,13 +104,21 @@ fun AddStepDialog(onAdd: (WorkflowStep) -> Unit, onDismiss: () -> Unit) {
                 OutlinedTextField(
                     value = params,
                     onValueChange = { params = it },
-                    label = { Text("Params (JSON or command)") },
+                    label = {
+                        Text(
+                            when (selectedType) {
+                                "shell_exec" -> "Command or JSON args"
+                                "git_exec" -> "Git subcommand or JSON args"
+                                else -> "JSON args or file content"
+                            }
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
         },
         confirmButton = {
-            Button(onClick = { onAdd(WorkflowStep(selectedType, params)) }) { Text("Add") }
+            Button(onClick = { onAdd(WorkflowDraftStep(selectedType, params)) }) { Text("Add") }
         },
         dismissButton = {
             OutlinedButton(onClick = onDismiss) { Text("Cancel") }

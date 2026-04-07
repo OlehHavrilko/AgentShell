@@ -8,15 +8,16 @@ import dev.agentshell.llm.LlmGateway
 import dev.agentshell.llm.OllamaGateway
 import dev.agentshell.llm.OpenAiGateway
 import dev.agentshell.llm.OpenRouterGateway
-import dev.agentshell.memory.InMemoryMemoryStore
+import dev.agentshell.llm.provider.LlmProviderAdapter
+import dev.agentshell.llm.provider.LlmProviderRegistry
+import dev.agentshell.llm.provider.LlmProvidersLoader
 import dev.agentshell.memory.MemoryAugmentedGateway
 import dev.agentshell.memory.MemoryStore
 import dev.agentshell.memory.SqliteMemoryStore
 import dev.agentshell.observability.MetricsServer
-import dev.agentshell.observability.MetricsCollector
-import dev.agentshell.orchestrator.AgentSpec
 import dev.agentshell.orchestrator.Orchestrator
 import dev.agentshell.orchestrator.OrchestratorPlanLoader
+import dev.agentshell.plugin.PluginLoader
 import dev.agentshell.report.RunReportGenerator
 import dev.agentshell.runtime.AgentRunner
 import dev.agentshell.runtime.AgentRuntime
@@ -36,6 +37,8 @@ import java.io.File
 import kotlin.system.exitProcess
 
 private val log = LoggerFactory.getLogger("dev.agentshell.Main")
+private var dynamicProvidersInitialized = false
+private var pluginLoader: PluginLoader? = null
 
 fun main(args: Array<String>) {
     val config = parseArgs(args) ?: exitProcess(1)
@@ -68,7 +71,7 @@ fun main(args: Array<String>) {
 
     val metricsServer = config.metricsPort?.let { port ->
         val reportGen = RunReportGenerator(store, auditTrail)
-        MetricsServer(port, reportGen, store).also {
+        MetricsServer(port, reportGen, store, memoryStore).also {
             it.start()
             println("Dashboard:       http://localhost:$port/ui")
             println("Metrics server:  http://localhost:$port/metrics")
@@ -99,6 +102,7 @@ fun main(args: Array<String>) {
         log.info("Shutdown hook triggered — closing resources")
         approvalServer?.stop()
         metricsServer?.stop()
+        pluginLoader?.unloadAll()
         watchdog.stop()
         heartbeat.shutdown()
         db.close()
@@ -153,6 +157,22 @@ fun main(args: Array<String>) {
     println("Run finished: runId=${outcome.runId} status=${outcome.status} steps=${outcome.results.size}")
     log.info("Run outcome: runId={} status={} steps={}", outcome.runId, outcome.status, outcome.results.size)
     exitProcess(if (outcome.status.name == "COMPLETED") 0 else 1)
+}
+
+private fun ensureDynamicProvidersLoaded() {
+    if (dynamicProvidersInitialized) return
+
+    val providersConfig = LlmProvidersLoader.load()
+    LlmProvidersLoader.registerAll(providersConfig)
+
+    val resolvedPluginDir = File(System.getProperty("agentshell.pluginsDir") ?: "plugins")
+    pluginLoader = PluginLoader(resolvedPluginDir)
+    val loadedPlugins = pluginLoader?.loadAll().orEmpty()
+    if (loadedPlugins.isNotEmpty()) {
+        println("Plugins:         loaded ${loadedPlugins.size} from ${resolvedPluginDir.absolutePath}")
+    }
+
+    dynamicProvidersInitialized = true
 }
 
 enum class RunMode { SCRIPTED, AGENTIC, ORCHESTRATE }
@@ -327,6 +347,11 @@ private fun parseArgs(args: Array<String>): CliConfig? {
 }
 
 private fun buildGateway(provider: String, model: String?, map: Map<String, String>): LlmGateway? = when (provider.lowercase()) {
+    else -> {
+        ensureDynamicProvidersLoaded()
+        LlmProviderRegistry.get(provider.lowercase())?.let { return LlmProviderAdapter(it) }
+
+        when (provider.lowercase()) {
     "openai" -> {
         val key = System.getenv("OPENAI_API_KEY") ?: run {
             System.err.println("Error: OPENAI_API_KEY environment variable is not set")
@@ -352,8 +377,10 @@ private fun buildGateway(provider: String, model: String?, map: Map<String, Stri
         val url = map["ollama-url"] ?: "http://localhost:11434"
         OllamaGateway(model = model ?: "llama3.1", baseUrl = url)
     }
-    else -> {
-        System.err.println("Error: unknown provider '$provider'. Use: openai | openrouter | gemini | ollama")
-        null
+            else -> {
+                System.err.println("Error: unknown provider '$provider'. Use: openai | openrouter | gemini | ollama or a registered plugin provider")
+                null
+            }
+        }
     }
 }

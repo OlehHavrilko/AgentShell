@@ -11,6 +11,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.agentshell.app.AgentShellApp
 import com.agentshell.app.ui.MainActivity
+import com.agentshell.app.workflow.WorkflowDraftStep
 import dev.agentshell.audit.AuditEvent
 import dev.agentshell.audit.AuditEventType
 import dev.agentshell.audit.AuditTrail
@@ -18,10 +19,15 @@ import dev.agentshell.executor.ToolDispatcher
 import dev.agentshell.llm.LlmGateway
 import dev.agentshell.runtime.AgentRunner
 import dev.agentshell.state.InMemoryStateStore
+import dev.agentshell.workflow.StepDefinition
+import dev.agentshell.workflow.WorkflowDefinition
+import dev.agentshell.workflow.WorkflowLoader
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 private const val TAG = "AgentRuntimeService"
 private const val NOTIFICATION_ID = 1
@@ -30,6 +36,7 @@ class AgentRuntimeService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _events = MutableSharedFlow<AgentMessage>(extraBufferCapacity = 200)
+    private val json = Json { ignoreUnknownKeys = true }
 
     private var prootSandbox: ProotSandbox? = null
     private var termuxConnector: TermuxConnector? = null
@@ -54,6 +61,9 @@ class AgentRuntimeService : Service() {
             ACTION_START_JVM -> startJvmAgent(
                 goal = intent.getStringExtra(EXTRA_GOAL) ?: "Complete the task",
                 providerId = intent.getStringExtra(EXTRA_PROVIDER) ?: "ollama"
+            )
+            ACTION_START_WORKFLOW -> startWorkflow(
+                workflowJson = intent.getStringExtra(EXTRA_WORKFLOW_JSON).orEmpty()
             )
             ACTION_STOP -> stopSelf()
         }
@@ -106,35 +116,7 @@ class AgentRuntimeService : Service() {
         scope.launch(Dispatchers.IO) {
             val stateStore = InMemoryStateStore()
             var runId = "(unknown)"
-            val auditTrail = object : AuditTrail {
-                override fun record(event: AuditEvent) {
-                    val msg = when (event.eventType) {
-                        AuditEventType.RUN_STARTED -> {
-                            runId = event.runId
-                            AgentMessage("run_started", event.runId, "agentId=${event.detail}")
-                        }
-                        AuditEventType.STEP_STARTED ->
-                            AgentMessage("tool_start", event.runId,
-                                "${event.toolName} ${event.argsJson?.take(120)}")
-                        AuditEventType.STEP_COMPLETED ->
-                            AgentMessage("tool_result", event.runId,
-                                event.resultJson?.take(200))
-                        AuditEventType.STEP_FAILED ->
-                            AgentMessage("tool_error", event.runId,
-                                "${event.errorCode}: ${event.detail}")
-                        AuditEventType.APPROVAL_REQUESTED ->
-                            AgentMessage("approval_request", event.runId,
-                                "${event.stepId}|${event.detail}")
-                        AuditEventType.RUN_COMPLETED ->
-                            AgentMessage("run_complete", event.runId, event.detail)
-                        AuditEventType.RUN_FAILED, AuditEventType.RUN_CRASHED ->
-                            AgentMessage("error", event.runId, event.detail)
-                        else -> return
-                    }
-                    _events.tryEmit(msg)
-                }
-                override fun queryByRun(runId: String): List<AuditEvent> = emptyList()
-            }
+            val auditTrail = createEventAuditTrail { runId = it }
 
             val runner = AgentRunner(
                 stateStore = stateStore,
@@ -156,6 +138,62 @@ class AgentRuntimeService : Service() {
                 _events.tryEmit(AgentMessage("chat_response", outcome.runId, finalMsg))
             } catch (e: Exception) {
                 Log.e(TAG, "JVM agent failed", e)
+                _events.tryEmit(AgentMessage("error", runId, e.message))
+            } finally {
+                updateNotification("Agent idle")
+            }
+        }
+    }
+
+    fun startWorkflow(workflowJson: String) {
+        val steps = runCatching {
+            json.decodeFromString<List<WorkflowDraftStep>>(workflowJson)
+        }.getOrElse { e ->
+            _events.tryEmit(AgentMessage("error", payload = "Invalid workflow payload: ${e.message}"))
+            return
+        }
+
+        if (steps.isEmpty()) {
+            _events.tryEmit(AgentMessage("error", payload = "Workflow has no steps"))
+            return
+        }
+
+        scope.launch(Dispatchers.IO) {
+            val stateStore = InMemoryStateStore()
+            var runId = "(unknown)"
+            val auditTrail = createEventAuditTrail { runId = it }
+            val runner = AgentRunner(
+                stateStore = stateStore,
+                dispatcher = ToolDispatcher(),
+                auditTrail = auditTrail,
+            )
+
+            val workflow = WorkflowDefinition(
+                name = "Android Workflow",
+                description = "Generated from Workflow Builder",
+                steps = steps.mapIndexed { index, step ->
+                    StepDefinition(
+                        id = "step_${index + 1}",
+                        tool = step.type,
+                        args = step.toArgsMap(),
+                        description = step.params.take(120),
+                    )
+                },
+            )
+
+            updateNotification("Workflow running…")
+            try {
+                val outcome = runner.execute(WorkflowLoader.toRunConfig("android-workflow", workflow))
+                val okCount = outcome.results.count { it.success }
+                _events.tryEmit(
+                    AgentMessage(
+                        "chat_response",
+                        outcome.runId,
+                        "Workflow completed: ${outcome.status} ($okCount/${outcome.results.size} steps successful)",
+                    )
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Workflow execution failed", e)
                 _events.tryEmit(AgentMessage("error", runId, e.message))
             } finally {
                 updateNotification("Agent idle")
@@ -204,6 +242,33 @@ class AgentRuntimeService : Service() {
         channel.receive().collect { msg -> _events.tryEmit(msg) }
     }
 
+    private fun createEventAuditTrail(onRunId: (String) -> Unit): AuditTrail = object : AuditTrail {
+        override fun record(event: AuditEvent) {
+            val msg = when (event.eventType) {
+                AuditEventType.RUN_STARTED -> {
+                    onRunId(event.runId)
+                    AgentMessage("run_started", event.runId, "agentId=${event.detail}")
+                }
+                AuditEventType.STEP_STARTED ->
+                    AgentMessage("tool_start", event.runId, "${event.toolName} ${event.argsJson?.take(120)}")
+                AuditEventType.STEP_COMPLETED ->
+                    AgentMessage("tool_result", event.runId, event.resultJson?.take(200))
+                AuditEventType.STEP_FAILED ->
+                    AgentMessage("tool_error", event.runId, "${event.errorCode}: ${event.detail}")
+                AuditEventType.APPROVAL_REQUESTED ->
+                    AgentMessage("approval_request", event.runId, "${event.stepId}|${event.detail}")
+                AuditEventType.RUN_COMPLETED ->
+                    AgentMessage("run_complete", event.runId, event.detail)
+                AuditEventType.RUN_FAILED, AuditEventType.RUN_CRASHED ->
+                    AgentMessage("error", event.runId, event.detail)
+                else -> return
+            }
+            _events.tryEmit(msg)
+        }
+
+        override fun queryByRun(runId: String): List<AuditEvent> = emptyList()
+    }
+
     fun send(msg: AgentMessage) = scope.launch { mcpChannel?.send(msg) }
 
     fun events(): Flow<AgentMessage> = _events.asSharedFlow()
@@ -246,8 +311,10 @@ class AgentRuntimeService : Service() {
         const val ACTION_START_EMBEDDED = "com.agentshell.action.START_EMBEDDED"
         const val ACTION_START_TERMUX = "com.agentshell.action.START_TERMUX"
         const val ACTION_START_JVM = "com.agentshell.action.START_JVM"
+        const val ACTION_START_WORKFLOW = "com.agentshell.action.START_WORKFLOW"
         const val ACTION_STOP = "com.agentshell.action.STOP"
         const val EXTRA_GOAL = "goal"
         const val EXTRA_PROVIDER = "providerId"
+        const val EXTRA_WORKFLOW_JSON = "workflowJson"
     }
 }
