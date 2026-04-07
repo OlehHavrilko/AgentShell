@@ -1,5 +1,7 @@
 # AgentShell — Project Context
 
+> 📊 **[Текущее состояние проекта (STATUS.md)](STATUS.md)** — полная информация о завершённом Sprint 10
+
 ## Project Overview
 
 **AgentShell** is a resume-first, approval-gated agent runtime for safe autonomous tool execution on Android and JVM platforms. It supports both scripted YAML pipelines and fully autonomous LLM-driven agentic loops with MCP (Model Context Protocol) tool integration.

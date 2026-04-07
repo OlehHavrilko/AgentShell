@@ -1,5 +1,7 @@
 # AgentShell
 
+> 📊 **[Текущее состояние проекта (STATUS.md)](STATUS.md)** — полная информация о завершённом Sprint 10
+
 ## Multi-module Structure
 
 This is a multi-module Gradle project:
