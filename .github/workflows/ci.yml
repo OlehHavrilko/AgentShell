@@ -116,7 +116,11 @@ jobs:
       - name: Create placeholder rootfs (CI — no Docker available)
         run: |
           mkdir -p android-app/src/main/assets
-          echo "placeholder" > android-app/src/main/assets/rootfs.tar.gz
+          tmp_rootfs_dir="$(mktemp -d)"
+          mkdir -p "$tmp_rootfs_dir/etc"
+          printf 'placeholder rootfs for CI APK build\n' > "$tmp_rootfs_dir/etc/agentshell-ci-placeholder"
+          tar -czf android-app/src/main/assets/rootfs.tar.gz -C "$tmp_rootfs_dir" .
+          rm -rf "$tmp_rootfs_dir"
 
       - name: Create placeholder jniLibs (CI — libproot not built here)
         run: |
