@@ -15,7 +15,7 @@ object AndroidProviderCatalog {
             displayName = "Ollama (Local)",
             isLocal = true,
             defaultModel = "llama3.2",
-            defaultHost = "http://localhost:11434",
+            defaultHost = "http://10.0.2.2:11434",
         ),
         AndroidProviderDefinition(
             id = "openai",

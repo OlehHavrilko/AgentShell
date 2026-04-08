@@ -9,7 +9,10 @@ interface StepDao {
     fun stepsForRun(runId: String): Flow<List<StepEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(step: StepEntity)
+    suspend fun insert(step: StepEntity): Long
+
+    @Query("UPDATE step_table SET status = :status, endTime = :endTime, output = :output WHERE id = :id")
+    suspend fun updateById(id: Long, status: String, endTime: Long, output: String?)
 
     @Delete
     suspend fun delete(step: StepEntity)

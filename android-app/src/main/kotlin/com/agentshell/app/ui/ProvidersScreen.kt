@@ -47,6 +47,19 @@ fun ProvidersScreen(vm: SettingsViewModel = viewModel()) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        Card(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        ) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("💡 Free tiers available", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    "Groq, DeepSeek, and OpenRouter all offer free API usage. Tap the ✏ edit button to add your key.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+            }
+        }
         LazyColumn {
             items(providers) { prov ->
                 ProviderRow(
@@ -87,6 +100,13 @@ fun ProviderRow(provider: ProviderUiState, onToggle: (Boolean) -> Unit, onEdit: 
                             provider.model,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                    if (!provider.isLocal && provider.apiKey.isBlank()) {
+                        Text(
+                            "⚠ No API key — configure to use",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
                         )
                     }
                 }

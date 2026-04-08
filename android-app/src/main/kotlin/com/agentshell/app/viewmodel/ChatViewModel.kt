@@ -22,6 +22,11 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private val prefs = app.getSharedPreferences("agentshell", Context.MODE_PRIVATE)
 
+    private val _isProviderReady = MutableStateFlow(checkProviderReady(
+        prefs.getString("selected_provider", "ollama") ?: "ollama"
+    ))
+    val isProviderReady = _isProviderReady.asStateFlow()
+
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages = _messages.asStateFlow()
 
@@ -58,10 +63,17 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key?.startsWith("prov_apikey_") == true || key == "selected_provider") {
+            _isProviderReady.value = checkProviderReady(_selectedProvider.value)
+        }
+    }
+
     init {
         // Auto-create & connect to service so events are captured from app start
         val intent = Intent(app, AgentRuntimeService::class.java)
         app.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+        prefs.registerOnSharedPreferenceChangeListener(prefListener)
     }
 
     private fun observeEvents(svc: AgentRuntimeService) {
@@ -98,8 +110,19 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private fun checkProviderReady(id: String): Boolean = when (id) {
+        "ollama" -> true
+        else -> prefs.getString("prov_apikey_$id", "")?.isNotBlank() == true
+    }
+
     private fun appendMessage(role: String, content: String) {
         _messages.value = _messages.value + ChatMessage(role, content)
+    }
+
+    fun clearMessages() {
+        _messages.value = emptyList()
+        _isLoading.value = false
+        _pendingApproval.value = null
     }
 
     // ── Public API ─────────────────────────────────────────────────────────────
@@ -143,10 +166,12 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
     fun selectProvider(id: String) {
         prefs.edit().putString("selected_provider", id).apply()
         _selectedProvider.value = id
+        _isProviderReady.value = checkProviderReady(id)
     }
 
     override fun onCleared() {
         eventJob?.cancel()
+        runCatching { prefs.unregisterOnSharedPreferenceChangeListener(prefListener) }
         runCatching { app.unbindService(serviceConnection) }
         super.onCleared()
     }

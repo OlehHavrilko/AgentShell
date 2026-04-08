@@ -10,6 +10,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.agentshell.app.AgentShellApp
+import com.agentshell.app.db.*
 import com.agentshell.app.ui.MainActivity
 import com.agentshell.app.workflow.WorkflowDraftStep
 import dev.agentshell.audit.AuditEvent
@@ -37,6 +38,7 @@ class AgentRuntimeService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _events = MutableSharedFlow<AgentMessage>(replay = 50, extraBufferCapacity = 200)
     private val json = Json { ignoreUnknownKeys = true }
+    private val db by lazy { AgentDatabase.getInstance(this) }
 
     private var prootSandbox: ProotSandbox? = null
     private var termuxConnector: TermuxConnector? = null
@@ -112,7 +114,7 @@ class AgentRuntimeService : Service() {
         scope.launch(Dispatchers.IO) {
             val stateStore = InMemoryStateStore()
             var runId = "(unknown)"
-            val auditTrail = createEventAuditTrail { runId = it }
+            val auditTrail = createEventAuditTrail(goal = goal) { runId = it }
 
             val runner = AgentRunner(
                 stateStore = stateStore,
@@ -157,7 +159,7 @@ class AgentRuntimeService : Service() {
         scope.launch(Dispatchers.IO) {
             val stateStore = InMemoryStateStore()
             var runId = "(unknown)"
-            val auditTrail = createEventAuditTrail { runId = it }
+            val auditTrail = createEventAuditTrail(goal = "Workflow: ${steps.size} steps") { runId = it }
             val runner = AgentRunner(
                 stateStore = stateStore,
                 dispatcher = ToolDispatcher(),
@@ -271,31 +273,115 @@ class AgentRuntimeService : Service() {
         channel.receive().collect { msg -> _events.tryEmit(msg) }
     }
 
-    private fun createEventAuditTrail(onRunId: (String) -> Unit): AuditTrail = object : AuditTrail {
-        override fun record(event: AuditEvent) {
-            val msg = when (event.eventType) {
-                AuditEventType.RUN_STARTED -> {
-                    onRunId(event.runId)
-                    AgentMessage("run_started", event.runId, "agentId=${event.detail}")
-                }
-                AuditEventType.STEP_STARTED ->
-                    AgentMessage("tool_start", event.runId, "${event.toolName} ${event.argsJson?.take(120)}")
-                AuditEventType.STEP_COMPLETED ->
-                    AgentMessage("tool_result", event.runId, event.resultJson?.take(200))
-                AuditEventType.STEP_FAILED ->
-                    AgentMessage("tool_error", event.runId, "${event.errorCode}: ${event.detail}")
-                AuditEventType.APPROVAL_REQUESTED ->
-                    AgentMessage("approval_request", event.runId, "${event.stepId}|${event.detail}")
-                AuditEventType.RUN_COMPLETED ->
-                    AgentMessage("run_complete", event.runId, event.detail)
-                AuditEventType.RUN_FAILED, AuditEventType.RUN_CRASHED ->
-                    AgentMessage("error", event.runId, event.detail)
-                else -> return
-            }
-            _events.tryEmit(msg)
-        }
+    private fun createEventAuditTrail(goal: String, onRunId: (String) -> Unit): AuditTrail {
+        var stepCount = 0
+        val stepDbIds = mutableMapOf<String, Long>() // stepId → db row id
+        val runStartTime = System.currentTimeMillis()
 
-        override fun queryByRun(runId: String): List<AuditEvent> = emptyList()
+        return object : AuditTrail {
+            override fun record(event: AuditEvent) {
+                val now = System.currentTimeMillis()
+
+                // Persist audit event
+                scope.launch {
+                    db.auditDao().insert(AuditEntity(
+                        runId = event.runId,
+                        type = event.eventType.name,
+                        timestamp = now,
+                        payload = buildString {
+                            event.toolName?.let { append("tool=$it ") }
+                            event.argsJson?.let { append("args=${it.take(200)} ") }
+                            event.resultJson?.let { append("result=${it.take(200)} ") }
+                            event.detail?.let { append(it.take(200)) }
+                        }.trim().ifBlank { null },
+                    ))
+                }
+
+                val msg = when (event.eventType) {
+                    AuditEventType.RUN_STARTED -> {
+                        onRunId(event.runId)
+                        scope.launch {
+                            db.runDao().insert(RunEntity(
+                                runId = event.runId,
+                                preset = goal.take(80),
+                                status = "RUNNING",
+                                startTime = runStartTime,
+                                endTime = null,
+                                tokenCost = 0.0,
+                            ))
+                        }
+                        AgentMessage("run_started", event.runId, "agentId=${event.detail}")
+                    }
+                    AuditEventType.STEP_STARTED -> {
+                        val idx = stepCount++
+                        scope.launch {
+                            val rowId = db.stepDao().insert(StepEntity(
+                                runId = event.runId,
+                                stepIndex = idx,
+                                toolId = event.toolName ?: "unknown",
+                                status = "RUNNING",
+                                startTime = now,
+                                endTime = null,
+                                input = event.argsJson?.take(500),
+                                output = null,
+                            ))
+                            event.stepId?.let { stepDbIds[it] = rowId }
+                        }
+                        AgentMessage("tool_start", event.runId, "${event.toolName} ${event.argsJson?.take(120)}")
+                    }
+                    AuditEventType.STEP_COMPLETED -> {
+                        scope.launch {
+                            event.stepId?.let { sid ->
+                                stepDbIds[sid]?.let { dbId ->
+                                    db.stepDao().updateById(dbId, "COMPLETED", now, event.resultJson?.take(500))
+                                }
+                            }
+                        }
+                        AgentMessage("tool_result", event.runId, event.resultJson?.take(200))
+                    }
+                    AuditEventType.STEP_FAILED -> {
+                        scope.launch {
+                            event.stepId?.let { sid ->
+                                stepDbIds[sid]?.let { dbId ->
+                                    db.stepDao().updateById(dbId, "FAILED", now, "${event.errorCode}: ${event.detail}")
+                                }
+                            }
+                        }
+                        AgentMessage("tool_error", event.runId, "${event.errorCode}: ${event.detail}")
+                    }
+                    AuditEventType.APPROVAL_REQUESTED ->
+                        AgentMessage("approval_request", event.runId, "${event.stepId}|${event.detail}")
+                    AuditEventType.RUN_COMPLETED -> {
+                        scope.launch {
+                            db.runDao().getById(event.runId)?.let { run ->
+                                db.runDao().update(run.copy(status = "COMPLETED", endTime = now))
+                            }
+                        }
+                        AgentMessage("run_complete", event.runId, event.detail)
+                    }
+                    AuditEventType.RUN_FAILED -> {
+                        scope.launch {
+                            db.runDao().getById(event.runId)?.let { run ->
+                                db.runDao().update(run.copy(status = "FAILED", endTime = now))
+                            }
+                        }
+                        AgentMessage("error", event.runId, event.detail)
+                    }
+                    AuditEventType.RUN_CRASHED -> {
+                        scope.launch {
+                            db.runDao().getById(event.runId)?.let { run ->
+                                db.runDao().update(run.copy(status = "CRASHED", endTime = now))
+                            }
+                        }
+                        AgentMessage("error", event.runId, event.detail)
+                    }
+                    else -> return
+                }
+                _events.tryEmit(msg)
+            }
+
+            override fun queryByRun(runId: String): List<AuditEvent> = emptyList()
+        }
     }
 
     fun send(msg: AgentMessage) = scope.launch { mcpChannel?.send(msg) }
