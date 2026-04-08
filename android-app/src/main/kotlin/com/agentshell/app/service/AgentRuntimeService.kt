@@ -35,7 +35,7 @@ private const val NOTIFICATION_ID = 1
 class AgentRuntimeService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val _events = MutableSharedFlow<AgentMessage>(extraBufferCapacity = 200)
+    private val _events = MutableSharedFlow<AgentMessage>(replay = 50, extraBufferCapacity = 200)
     private val json = Json { ignoreUnknownKeys = true }
 
     private var prootSandbox: ProotSandbox? = null
@@ -107,11 +107,7 @@ class AgentRuntimeService : Service() {
      * Events are emitted via [_events] so ChatViewModel can observe them.
      */
     fun startJvmAgent(goal: String, providerId: String) {
-        val gateway = buildGateway(providerId)
-        if (gateway == null) {
-            _events.tryEmit(AgentMessage("error", payload = "Unknown provider: $providerId"))
-            return
-        }
+        val gateway = buildGateway(providerId) ?: return // buildGateway already emitted an error event
 
         scope.launch(Dispatchers.IO) {
             val stateStore = InMemoryStateStore()
@@ -201,40 +197,73 @@ class AgentRuntimeService : Service() {
         }
     }
 
-    /** Build an [AndroidLlmGateway] for the given provider using stored prefs. */
+    /** Build an [AndroidLlmGateway] for the given provider using stored prefs.
+     *  Returns null and emits an error event if configuration is missing. */
     private fun buildGateway(providerId: String): LlmGateway? {
         val prefs = getSharedPreferences("agentshell", Context.MODE_PRIVATE)
+
+        fun noKey(name: String): LlmGateway? {
+            _events.tryEmit(AgentMessage(
+                "error",
+                payload = "No API key configured for $name. Go to Settings → Providers to add one.",
+            ))
+            return null
+        }
+
         return when (providerId) {
-            "openai" -> AndroidLlmGateway(
-                apiKey = prefs.getString("prov_apikey_openai", "") ?: "",
-                model = prefs.getString("prov_model_openai", "gpt-4o-mini") ?: "gpt-4o-mini",
-            ).takeIf { prefs.getString("prov_apikey_openai", "")!!.isNotBlank() }
+            "openai" -> {
+                val key = prefs.getString("prov_apikey_openai", "") ?: ""
+                if (key.isBlank()) return noKey("OpenAI")
+                AndroidLlmGateway(
+                    apiKey = key,
+                    model = prefs.getString("prov_model_openai", "gpt-4o-mini") ?: "gpt-4o-mini",
+                )
+            }
             "ollama" -> AndroidLlmGateway(
                 apiKey = "ollama",
                 model = prefs.getString("prov_model_ollama", "llama3.2") ?: "llama3.2",
-                baseUrl = (prefs.getString("prov_host_ollama", "http://localhost:11434") ?: "http://localhost:11434").trimEnd('/') + "/v1",
+                baseUrl = (prefs.getString("prov_host_ollama", "http://10.0.2.2:11434") ?: "http://10.0.2.2:11434").trimEnd('/') + "/v1",
             )
-            "groq" -> AndroidLlmGateway(
-                apiKey = prefs.getString("prov_apikey_groq", "") ?: "",
-                model = prefs.getString("prov_model_groq", "llama-3.3-70b-versatile") ?: "llama-3.3-70b-versatile",
-                baseUrl = "https://api.groq.com/openai/v1",
-            ).takeIf { prefs.getString("prov_apikey_groq", "")!!.isNotBlank() }
-            "deepseek" -> AndroidLlmGateway(
-                apiKey = prefs.getString("prov_apikey_deepseek", "") ?: "",
-                model = prefs.getString("prov_model_deepseek", "deepseek-chat") ?: "deepseek-chat",
-                baseUrl = "https://api.deepseek.com/v1",
-            ).takeIf { prefs.getString("prov_apikey_deepseek", "")!!.isNotBlank() }
-            "mistral" -> AndroidLlmGateway(
-                apiKey = prefs.getString("prov_apikey_mistral", "") ?: "",
-                model = prefs.getString("prov_model_mistral", "mistral-large-latest") ?: "mistral-large-latest",
-                baseUrl = "https://api.mistral.ai/v1",
-            ).takeIf { prefs.getString("prov_apikey_mistral", "")!!.isNotBlank() }
-            "openrouter" -> AndroidLlmGateway(
-                apiKey = prefs.getString("prov_apikey_openrouter", "") ?: "",
-                model = prefs.getString("prov_model_openrouter", "anthropic/claude-3.5-sonnet") ?: "anthropic/claude-3.5-sonnet",
-                baseUrl = "https://openrouter.ai/api/v1",
-            ).takeIf { prefs.getString("prov_apikey_openrouter", "")!!.isNotBlank() }
-            else -> null
+            "groq" -> {
+                val key = prefs.getString("prov_apikey_groq", "") ?: ""
+                if (key.isBlank()) return noKey("Groq")
+                AndroidLlmGateway(
+                    apiKey = key,
+                    model = prefs.getString("prov_model_groq", "llama-3.3-70b-versatile") ?: "llama-3.3-70b-versatile",
+                    baseUrl = "https://api.groq.com/openai/v1",
+                )
+            }
+            "deepseek" -> {
+                val key = prefs.getString("prov_apikey_deepseek", "") ?: ""
+                if (key.isBlank()) return noKey("DeepSeek")
+                AndroidLlmGateway(
+                    apiKey = key,
+                    model = prefs.getString("prov_model_deepseek", "deepseek-chat") ?: "deepseek-chat",
+                    baseUrl = "https://api.deepseek.com/v1",
+                )
+            }
+            "mistral" -> {
+                val key = prefs.getString("prov_apikey_mistral", "") ?: ""
+                if (key.isBlank()) return noKey("Mistral")
+                AndroidLlmGateway(
+                    apiKey = key,
+                    model = prefs.getString("prov_model_mistral", "mistral-large-latest") ?: "mistral-large-latest",
+                    baseUrl = "https://api.mistral.ai/v1",
+                )
+            }
+            "openrouter" -> {
+                val key = prefs.getString("prov_apikey_openrouter", "") ?: ""
+                if (key.isBlank()) return noKey("OpenRouter")
+                AndroidLlmGateway(
+                    apiKey = key,
+                    model = prefs.getString("prov_model_openrouter", "anthropic/claude-3.5-sonnet") ?: "anthropic/claude-3.5-sonnet",
+                    baseUrl = "https://openrouter.ai/api/v1",
+                )
+            }
+            else -> {
+                _events.tryEmit(AgentMessage("error", payload = "Unknown provider: $providerId"))
+                null
+            }
         }
     }
 

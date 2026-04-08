@@ -2,17 +2,16 @@ package com.agentshell.app.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -24,61 +23,62 @@ sealed class NavRoute(val route: String, val label: String) {
     object Memory : NavRoute("memory", "Memory")
     object Sandbox : NavRoute("sandbox", "Sandbox")
     object Settings : NavRoute("settings", "Settings")
+    object Providers : NavRoute("providers", "LLM Providers")
+    object WorkflowBuilder : NavRoute("workflow_builder", "Workflow Builder")
 }
 
 @Composable
 fun MainScreen() {
     val navController = rememberNavController()
-    val bottomItems = listOf(
-        NavRoute.Chat,
-        NavRoute.Runs,
-        NavRoute.Memory,
-        NavRoute.Sandbox,
-        NavRoute.Settings,
-    )
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route ?: NavRoute.Chat.route
+    val topBarTitle = when {
+        currentRoute == NavRoute.Runs.route -> NavRoute.Runs.label
+        currentRoute == NavRoute.Memory.route -> NavRoute.Memory.label
+        currentRoute == NavRoute.Sandbox.route -> NavRoute.Sandbox.label
+        currentRoute == NavRoute.Settings.route -> NavRoute.Settings.label
+        currentRoute == NavRoute.Providers.route -> NavRoute.Providers.label
+        currentRoute == NavRoute.WorkflowBuilder.route -> NavRoute.WorkflowBuilder.label
+        currentRoute.startsWith("run_detail") -> "Run details"
+        else -> null
+    }
 
     Scaffold(
-        bottomBar = {
-            NavigationBar {
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentDestination = navBackStackEntry?.destination
-                bottomItems.forEach { screen ->
-                    NavigationBarItem(
-                        icon = {
-                            when (screen) {
-                                is NavRoute.Chat -> Icon(Icons.Filled.Chat, screen.label)
-                                is NavRoute.Runs -> Icon(Icons.Filled.List, screen.label)
-                                is NavRoute.Memory -> Icon(Icons.Filled.Memory, screen.label)
-                                is NavRoute.Sandbox -> Icon(Icons.Filled.Build, screen.label)
-                                is NavRoute.Settings -> Icon(Icons.Filled.Settings, screen.label)
-                            }
-                        },
-                        label = { Text(screen.label) },
-                        selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
-                        onClick = {
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                launchSingleTop = true
-                                restoreState = true
-                            }
+        topBar = {
+            if (topBarTitle != null) {
+                TopAppBar(
+                    title = {
+                        Text(
+                            text = topBarTitle,
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = { navController.popBackStack() }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                            )
                         }
-                    )
-                }
+                    },
+                )
             }
-        }
+        },
     ) { innerPadding ->
         NavHost(
-            navController,
+            navController = navController,
             startDestination = NavRoute.Chat.route,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier.padding(innerPadding),
         ) {
-            composable(NavRoute.Chat.route) { ChatScreen() }
+            composable(NavRoute.Chat.route) {
+                ChatScreen(onOpenSettings = { navController.navigate(NavRoute.Settings.route) })
+            }
             composable(NavRoute.Runs.route) { RunsScreen(navController) }
             composable(NavRoute.Memory.route) { MemoryScreen() }
             composable(NavRoute.Sandbox.route) { SandboxScreen() }
             composable(NavRoute.Settings.route) { SettingsScreen(navController) }
-            composable("providers") { ProvidersScreen() }
-            composable("workflow_builder") { WorkflowBuilderScreen() }
+            composable(NavRoute.Providers.route) { ProvidersScreen() }
+            composable(NavRoute.WorkflowBuilder.route) { WorkflowBuilderScreen() }
             composable("run_detail/{runId}") { backStackEntry ->
                 RunDetailScreen(runId = backStackEntry.arguments?.getString("runId") ?: "")
             }

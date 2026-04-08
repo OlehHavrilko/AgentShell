@@ -59,9 +59,9 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     init {
-        // Connect to already-running service (do not auto-create)
+        // Auto-create & connect to service so events are captured from app start
         val intent = Intent(app, AgentRuntimeService::class.java)
-        app.bindService(intent, serviceConnection, 0)
+        app.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
     private fun observeEvents(svc: AgentRuntimeService) {
@@ -116,11 +116,12 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
                 putExtra(AgentRuntimeService.EXTRA_PROVIDER, _selectedProvider.value)
             }
             app.startForegroundService(startIntent)
-            // Also (re-)bind to catch future events
+            // Bind with BIND_AUTO_CREATE so the connection is established even if service
+            // takes a moment to fully initialise after startForegroundService
             app.bindService(
                 Intent(app, AgentRuntimeService::class.java),
                 serviceConnection,
-                0
+                Context.BIND_AUTO_CREATE,
             )
             return
         }

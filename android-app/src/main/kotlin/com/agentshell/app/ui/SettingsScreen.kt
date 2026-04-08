@@ -7,6 +7,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.SettingsSuggest
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +25,7 @@ fun SettingsScreen(navController: NavController? = null, vm: SettingsViewModel =
     val sandboxEnabled by vm.sandboxEnabled.collectAsState()
     val termuxEnabled by vm.termuxEnabled.collectAsState()
     val sandboxStatus by vm.sandboxStatus.collectAsState()
+    val providers by vm.providers.collectAsState()
 
     // File picker for ZIP import
     val importLauncher = rememberLauncherForActivityResult(
@@ -39,7 +44,7 @@ fun SettingsScreen(navController: NavController? = null, vm: SettingsViewModel =
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Settings", style = MaterialTheme.typography.headlineMedium)
             Text(
-                "Configure the local runtime, provider access, and package portability.",
+                "Chat stays as the main workspace. Advanced tools and runtime controls live here.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -48,9 +53,42 @@ fun SettingsScreen(navController: NavController? = null, vm: SettingsViewModel =
         SettingsSection("General") {
             Text("Version 1.0.0", style = MaterialTheme.typography.bodyMedium)
             Text(
-                "This build is aimed at testing the agent runtime on-device before release hardening.",
+                "This build is currently focused on interface flow and device-side runtime integration.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        SettingsSection("Advanced tools") {
+            Text(
+                "These sections are available, but they are secondary to the chat workflow.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            SettingsNavCard(
+                title = "Runs history",
+                subtitle = "Inspect agent runs and open detailed timelines.",
+                icon = { Icon(Icons.Filled.List, contentDescription = null) },
+                onClick = { navController?.navigate(NavRoute.Runs.route) },
+            )
+            SettingsNavCard(
+                title = "Memory",
+                subtitle = "Browse stored audit events and memory traces.",
+                icon = { Icon(Icons.Filled.Memory, contentDescription = null) },
+                onClick = { navController?.navigate(NavRoute.Memory.route) },
+            )
+            SettingsNavCard(
+                title = "Sandbox",
+                subtitle = "Control the embedded Linux environment and terminal session.",
+                icon = { Icon(Icons.Filled.Build, contentDescription = null) },
+                onClick = { navController?.navigate(NavRoute.Sandbox.route) },
+            )
+            SettingsNavCard(
+                title = "Workflow Builder",
+                subtitle = "Create manual multi-step tool flows for testing.",
+                icon = { Icon(Icons.Filled.SettingsSuggest, contentDescription = null) },
+                onClick = { navController?.navigate(NavRoute.WorkflowBuilder.route) },
             )
         }
 
@@ -121,32 +159,14 @@ fun SettingsScreen(navController: NavController? = null, vm: SettingsViewModel =
             )
         }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            onClick = { navController?.navigate("providers") },
-        ) {
-            Row(
-                Modifier
-                    .padding(14.dp)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text("LLM Providers", style = MaterialTheme.typography.titleMedium)
-                    val enabledCount = vm.providers.collectAsState().value.count { it.enabled }
-                    Text(
-                        "$enabledCount active",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                    Text(
-                        "Manage the providers available to the Android runtime.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Go to providers")
-            }
+        SettingsSection("Model providers") {
+            val enabledCount = providers.count { it.enabled }
+            SettingsNavCard(
+                title = "LLM Providers",
+                subtitle = "Manage the providers available to the Android runtime.",
+                supporting = "$enabledCount active",
+                onClick = { navController?.navigate(NavRoute.Providers.route) },
+            )
         }
     }
 }
@@ -161,6 +181,50 @@ fun SettingsSection(title: String, content: @Composable ColumnScope.() -> Unit) 
                 modifier = Modifier.padding(bottom = 8.dp),
             )
             content()
+        }
+    }
+}
+
+@Composable
+private fun SettingsNavCard(
+    title: String,
+    subtitle: String,
+    supporting: String? = null,
+    icon: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        onClick = onClick,
+    ) {
+        Row(
+            Modifier
+                .padding(14.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                icon?.invoke()
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(title, style = MaterialTheme.typography.titleMedium)
+                    supporting?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = title)
         }
     }
 }

@@ -40,25 +40,78 @@ fun WorkflowBuilderScreen() {
             }
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            Text("Workflow Builder", style = MaterialTheme.typography.headlineMedium)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Supported steps: shell_exec, git_exec, file_write. For shell/git you can enter plain text; for file_write JSON is recommended.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(12.dp))
-            if (steps.isEmpty()) {
-                Text("No steps yet. Tap + to add a step.", style = MaterialTheme.typography.bodyMedium)
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Workflow Builder", style = MaterialTheme.typography.headlineMedium)
+                Text(
+                    "Create a simple tool sequence and run it through the Android agent service.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Supported steps", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "shell_exec, git_exec, file_write. For shell and git you can use plain text; for file_write JSON is recommended.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            if (steps.isEmpty()) {
+                Card {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text("No steps yet", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Tap + to add the first tool call in the workflow.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            } else {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.small,
+                ) {
+                    Text(
+                        "${steps.size} steps ready",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            LazyColumn(
+                modifier = Modifier.weight(1f, fill = steps.isNotEmpty()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 itemsIndexed(steps) { index, step ->
                     Card(Modifier.fillMaxWidth()) {
-                        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Row(
+                            Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
                             Column(Modifier.weight(1f)) {
                                 Text("Step ${index + 1}: ${step.type}", style = MaterialTheme.typography.titleSmall)
-                                Text(step.params, style = MaterialTheme.typography.bodySmall)
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    step.params.ifBlank { "(empty params)" },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                             IconButton(onClick = { steps = steps.toMutableList().also { it.removeAt(index) } }) {
                                 Icon(Icons.Filled.Delete, contentDescription = "Remove")
@@ -68,15 +121,17 @@ fun WorkflowBuilderScreen() {
                 }
             }
             if (steps.isNotEmpty()) {
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = {
-                    val intent = Intent(context, AgentRuntimeService::class.java).apply {
-                        action = AgentRuntimeService.ACTION_START_WORKFLOW
-                        putExtra(AgentRuntimeService.EXTRA_WORKFLOW_JSON, workflowJson.encodeToString(steps))
-                    }
-                    ContextCompat.startForegroundService(context, intent)
-                }, Modifier.fillMaxWidth()) {
-                    Text("Save And Run Workflow")
+                Button(
+                    onClick = {
+                        val intent = Intent(context, AgentRuntimeService::class.java).apply {
+                            action = AgentRuntimeService.ACTION_START_WORKFLOW
+                            putExtra(AgentRuntimeService.EXTRA_WORKFLOW_JSON, workflowJson.encodeToString(steps))
+                        }
+                        ContextCompat.startForegroundService(context, intent)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Run Workflow")
                 }
             }
         }

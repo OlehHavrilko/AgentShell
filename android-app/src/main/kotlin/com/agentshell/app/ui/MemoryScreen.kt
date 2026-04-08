@@ -78,16 +78,23 @@ fun MemoryScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Memory", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(12.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Memory", style = MaterialTheme.typography.headlineMedium)
+            Text(
+                "Search recent audit entries and memory traces captured from agent runs.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
-        // ── Search box ───────────────────────────────────────────────────────
         OutlinedTextField(
             value = query,
             onValueChange = { vm.onQueryChange(it) },
-            label = { Text("Search memory…") },
+            label = { Text("Search memory") },
+            placeholder = { Text("Try run id, tool name, or event type") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             trailingIcon = {
@@ -99,34 +106,45 @@ fun MemoryScreen() {
             keyboardActions = KeyboardActions(onSearch = { vm.search() }),
         )
 
-        Spacer(Modifier.height(8.dp))
-
         if (isSearching) {
             LinearProgressIndicator(Modifier.fillMaxWidth())
-            Spacer(Modifier.height(8.dp))
         }
 
-        // ── Results ──────────────────────────────────────────────────────────
         if (results.isEmpty()) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .padding(top = 32.dp),
-                contentAlignment = Alignment.TopCenter
+                    .padding(top = 20.dp),
+                contentAlignment = Alignment.TopCenter,
             ) {
-                Text(
-                    "No memory entries found.\nEntries are indexed after each agent run.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                )
+                Card {
+                    Column(
+                        modifier = Modifier.padding(20.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text("No memory entries found", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Entries are indexed after each agent run. Start a run from Chat or broaden the search query.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
             }
         } else {
-            Text(
-                "${results.size} entries",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline
-            )
-            Spacer(Modifier.height(4.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.small,
+            ) {
+                Text(
+                    text = "${results.size} entries",
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 items(results) { entry -> MemoryEntryCard(entry) }
             }
@@ -139,22 +157,21 @@ private fun MemoryEntryCard(entry: AuditEntity) {
     val fmt = remember { SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault()) }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
-        Column(Modifier.padding(10.dp)) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(
                 Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(entry.type, style = MaterialTheme.typography.labelSmall)
                 Text(
                     fmt.format(Date(entry.timestamp)),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
+                    color = MaterialTheme.colorScheme.outline,
                 )
             }
             entry.payload?.takeIf { it.isNotBlank() }?.let { payload ->
-                Spacer(Modifier.height(4.dp))
                 Text(payload.take(250), style = MaterialTheme.typography.bodySmall)
             }
         }
