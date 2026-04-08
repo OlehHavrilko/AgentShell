@@ -15,7 +15,12 @@ android {
     }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    packaging {
+        resources.excludes += setOf(
+            "/META-INF/{AL2.0,LGPL2.1}",
+            "/META-INF/INDEX.LIST",
+        )
+    }
     sourceSets["main"].jniLibs.srcDirs("src/main/jniLibs")
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
