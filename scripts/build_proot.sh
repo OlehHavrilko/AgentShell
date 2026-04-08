@@ -43,13 +43,13 @@ ARG PROOT_VERSION=5.4.0
 RUN git clone --depth 1 --branch "v${PROOT_VERSION}" \
     https://github.com/proot-me/proot.git /proot || \
     git clone --depth 1 https://github.com/proot-me/proot.git /proot
-
-COPY build_proot_abi.sh /usr/local/bin/build_proot_abi.sh
-RUN chmod +x /usr/local/bin/build_proot_abi.sh
 DOCKERFILE
 
 # ── ABI build script (injected into container) ────────────────────────────────
-cat > /tmp/build_proot_abi.sh <<'ABISHELL'
+BUILD_SCRIPT="$(mktemp)"
+trap 'rm -f "$BUILD_SCRIPT"' EXIT
+
+cat > "$BUILD_SCRIPT" <<'ABISHELL'
 #!/bin/bash
 set -euo pipefail
 
@@ -106,7 +106,7 @@ for ABI in arm64-v8a armeabi-v7a x86_64; do
     mkdir -p "$OUTBASE/$ABI"
     docker run --rm \
         -v "$OUTBASE:/output" \
-        -v /tmp/build_proot_abi.sh:/usr/local/bin/build_proot_abi.sh \
+        -v "$BUILD_SCRIPT:/usr/local/bin/build_proot_abi.sh:ro" \
         "$BUILDER_IMAGE" \
         bash /usr/local/bin/build_proot_abi.sh "$ABI"
 done

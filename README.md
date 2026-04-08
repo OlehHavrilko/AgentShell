@@ -118,6 +118,14 @@ Main (CLI)
 ./gradlew build         # compile + test
 ```
 
+## GitHub Actions builds
+
+If you're building from the GitHub web UI instead of a local machine, the `CI` workflow is the primary path:
+
+- every run uploads `agentshell-jar` and `agentshell-debug-apk`
+- you can start it manually with **Run workflow**
+- enable the `build_native_assets` input when you also need `rootfs-tarball` and `libproot-jniLibs`
+
 ## Run
 
 ### Scripted mode (YAML workflow)
@@ -266,4 +274,3 @@ Crashed runs are auto-detected by `WatchdogService` (heartbeat age > 2 min).
 
 Logs are written to `logs/agentshell.log` (rolling, 7 days, 50 MB/file).  
 Override log directory with `-Dagentshell.logDir=/your/path`.
-

@@ -5,23 +5,22 @@ on:
     branches: [ main, "feature/**" ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      build_native_assets:
+        description: "Also build rootfs.tar.gz and libproot artifacts"
+        required: false
+        default: false
+        type: boolean
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   # ── agent-core: build + test ────────────────────────────────────────────────
   agent-core:
     name: agent-core Build & Test
     runs-on: ubuntu-latest
-
-    services:
-      ollama:
-        image: ollama/ollama:latest
-        ports:
-          - 11434:11434
-        options: >-
-          --health-cmd "curl -f http://localhost:11434/api/tags || exit 1"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout
@@ -42,8 +41,6 @@ jobs:
 
       - name: Run agent-core tests
         run: ./gradlew :agent-core:test --no-daemon
-        env:
-          OLLAMA_HOST: http://localhost:11434
 
       - name: Upload test results
         if: always()
@@ -66,10 +63,11 @@ jobs:
   rootfs:
     name: Build Alpine rootfs
     runs-on: ubuntu-latest
-    # Only rebuild if relevant scripts changed
     if: |
-      github.event_name == 'push' &&
-      (contains(github.event.head_commit.modified, 'scripts/build_rootfs.sh') || github.ref == 'refs/heads/main')
+      (github.event_name == 'workflow_dispatch' && inputs.build_native_assets) ||
+      (github.event_name == 'push' &&
+       github.ref == 'refs/heads/main' &&
+       contains(toJson(github.event.commits), 'scripts/build_rootfs.sh'))
 
     steps:
       - name: Checkout
@@ -101,6 +99,15 @@ jobs:
           java-version: "21"
           distribution: temurin
           cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Point Gradle at Android SDK
+        run: |
+          SDK_DIR="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          test -n "$SDK_DIR"
+          printf 'sdk.dir=%s\n' "$SDK_DIR" > local.properties
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -144,7 +151,11 @@ jobs:
   libproot:
     name: Build libproot.so (all ABIs)
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: |
+      (github.event_name == 'workflow_dispatch' && inputs.build_native_assets) ||
+      (github.event_name == 'push' &&
+       github.ref == 'refs/heads/main' &&
+       contains(toJson(github.event.commits), 'scripts/build_proot.sh'))
 
     steps:
       - name: Checkout
@@ -159,4 +170,3 @@ jobs:
           name: libproot-jniLibs
           path: android-app/src/main/jniLibs/
           retention-days: 30
-
