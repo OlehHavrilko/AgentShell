@@ -14,7 +14,7 @@ android {
         versionName = "1.0.0"
     }
     buildFeatures { compose = true }
-    composeOptions { kotlinCompilerExtensionVersion = "1.5.13" }
+    composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     sourceSets["main"].jniLibs.srcDirs("src/main/jniLibs")
     compileOptions {
