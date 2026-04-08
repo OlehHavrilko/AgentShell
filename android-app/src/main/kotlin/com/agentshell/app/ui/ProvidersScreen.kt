@@ -33,11 +33,20 @@ fun ProvidersScreen(vm: SettingsViewModel = viewModel()) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        Text(
-            "LLM Providers",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.padding(16.dp)
-        )
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                "LLM Providers",
+                style = MaterialTheme.typography.headlineMedium,
+            )
+            Text(
+                "These are the providers currently wired into the Android runtime. Configure keys, models, and local endpoints here.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         LazyColumn {
             items(providers) { prov ->
                 ProviderRow(
@@ -68,11 +77,17 @@ fun ProviderRow(provider: ProviderUiState, onToggle: (Boolean) -> Unit, onEdit: 
                 )
                 Column {
                     Text(provider.displayName, style = MaterialTheme.typography.titleSmall)
-                    Text(provider.id, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        provider.id,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     if (provider.model.isNotBlank()) {
-                        Text(provider.model, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary)
+                        Text(
+                            provider.model,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
                     }
                 }
             }

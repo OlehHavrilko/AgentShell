@@ -124,7 +124,8 @@ If you're building from the GitHub web UI instead of a local machine, the `CI` w
 
 - every run uploads `agentshell-jar` and `agentshell-debug-apk`
 - you can start it manually with **Run workflow**
-- enable the `build_native_assets` input when you also need `rootfs-tarball` and `libproot-jniLibs`
+- leave `build_native_assets` disabled for a fast APK with placeholder sandbox assets
+- enable `build_native_assets` to build `rootfs-tarball`, `libproot-jniLibs`, and `agentshell-full-debug-apk` with real bundled sandbox assets
 
 ## Run
 

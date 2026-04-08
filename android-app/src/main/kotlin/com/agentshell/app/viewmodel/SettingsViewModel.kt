@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.agentshell.app.llm.AndroidProviderCatalog
 import com.agentshell.app.service.AgentRuntimeService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -85,19 +86,17 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     private val _providers = MutableStateFlow<List<ProviderUiState>>(buildDefaultProviders())
     val providers = _providers.asStateFlow()
 
-    private fun buildDefaultProviders() = listOf(
-        ProviderUiState("openai", "OpenAI", false, prefs.getBoolean("prov_enabled_openai", false), prefs.getString("prov_apikey_openai", "") ?: "", prefs.getString("prov_model_openai", "gpt-4o-mini") ?: "", ""),
-        ProviderUiState("anthropic", "Anthropic (Claude)", false, prefs.getBoolean("prov_enabled_anthropic", false), prefs.getString("prov_apikey_anthropic", "") ?: "", prefs.getString("prov_model_anthropic", "claude-3-5-sonnet-20241022") ?: "", ""),
-        ProviderUiState("ollama", "Ollama (Local)", true, prefs.getBoolean("prov_enabled_ollama", true), "", prefs.getString("prov_model_ollama", "llama3.2") ?: "", prefs.getString("prov_host_ollama", "http://localhost:11434") ?: ""),
-        ProviderUiState("groq", "Groq (Ultra-fast)", false, prefs.getBoolean("prov_enabled_groq", false), prefs.getString("prov_apikey_groq", "") ?: "", prefs.getString("prov_model_groq", "llama-3.3-70b-versatile") ?: "", ""),
-        ProviderUiState("mistral", "Mistral AI", false, prefs.getBoolean("prov_enabled_mistral", false), prefs.getString("prov_apikey_mistral", "") ?: "", prefs.getString("prov_model_mistral", "mistral-large-latest") ?: "", ""),
-        ProviderUiState("deepseek", "DeepSeek", false, prefs.getBoolean("prov_enabled_deepseek", false), prefs.getString("prov_apikey_deepseek", "") ?: "", prefs.getString("prov_model_deepseek", "deepseek-chat") ?: "", ""),
-        ProviderUiState("huggingface", "Hugging Face", false, prefs.getBoolean("prov_enabled_huggingface", false), prefs.getString("prov_apikey_huggingface", "") ?: "", prefs.getString("prov_model_huggingface", "meta-llama/Meta-Llama-3.2-3B-Instruct") ?: "", ""),
-        ProviderUiState("cohere", "Cohere", false, prefs.getBoolean("prov_enabled_cohere", false), prefs.getString("prov_apikey_cohere", "") ?: "", prefs.getString("prov_model_cohere", "command-r-plus") ?: "", ""),
-        ProviderUiState("llama_cpp", "Llama.cpp (Local)", true, prefs.getBoolean("prov_enabled_llama_cpp", false), "", prefs.getString("prov_model_llama_cpp", "") ?: "", ""),
-        ProviderUiState("openrouter", "OpenRouter", false, prefs.getBoolean("prov_enabled_openrouter", false), prefs.getString("prov_apikey_openrouter", "") ?: "", prefs.getString("prov_model_openrouter", "anthropic/claude-3.5-sonnet") ?: "", ""),
-        ProviderUiState("gemini", "Google Gemini", false, prefs.getBoolean("prov_enabled_gemini", false), prefs.getString("prov_apikey_gemini", "") ?: "", prefs.getString("prov_model_gemini", "gemini-1.5-flash") ?: "", ""),
-    )
+    private fun buildDefaultProviders() = AndroidProviderCatalog.supported.map { provider ->
+        ProviderUiState(
+            id = provider.id,
+            displayName = provider.displayName,
+            isLocal = provider.isLocal,
+            enabled = prefs.getBoolean("prov_enabled_${provider.id}", provider.id == "ollama"),
+            apiKey = if (provider.isLocal) "" else prefs.getString("prov_apikey_${provider.id}", "") ?: "",
+            model = prefs.getString("prov_model_${provider.id}", provider.defaultModel) ?: provider.defaultModel,
+            host = prefs.getString("prov_host_${provider.id}", provider.defaultHost) ?: provider.defaultHost,
+        )
+    }
 
     fun toggleProvider(id: String, enabled: Boolean) {
         prefs.edit().putBoolean("prov_enabled_$id", enabled).apply()
