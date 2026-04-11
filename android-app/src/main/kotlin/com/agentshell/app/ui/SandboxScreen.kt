@@ -5,16 +5,19 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.isSystemInDarkTheme
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -23,19 +26,10 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.ui.platform.LocalContext
 import com.agentshell.app.service.SandboxMode
 import com.agentshell.app.service.SandboxState
 import com.agentshell.app.viewmodel.SandboxViewModel
-
-private val TerminalBg = Color(0xFF1E1E2E)
-private val TerminalFg = Color(0xFFCDD6F4)
-private val TerminalGreen = Color(0xFF50FA7B)
-private val TerminalRed = Color(0xFFFF5555)
-private val TerminalYellow = Color(0xFFFFB86C)
-private val TerminalBlue = Color(0xFF89B4FA)
-private val TerminalComment = Color(0xFF6272A4)
-private val TerminalInput = Color(0xFF313244)
+import com.agentshell.app.ui.theme.*
 
 @Composable
 fun SandboxScreen(vm: SandboxViewModel = viewModel(
@@ -44,54 +38,134 @@ fun SandboxScreen(vm: SandboxViewModel = viewModel(
     val state by vm.sandboxState.collectAsState()
     val mode by vm.currentMode.collectAsState()
     val lines by vm.terminalLines.collectAsState()
+    val isDark = isSystemInDarkTheme()
 
     Column(Modifier.fillMaxSize()) {
-        // ── Sticky header ────────────────────────────────────────────────────
+        // ── Header ────────────────────────────────────────────────────────
         Surface(
             tonalElevation = 2.dp,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth(),
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("Sandbox", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.weight(1f))
+                // Title row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Terminal,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "Sandbox",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Spacer(Modifier.weight(1f))
 
-                // Mode toggle (only when not running)
-                Text(
-                    if (mode == SandboxMode.PROOT) "Proot" else "Termux",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.width(4.dp))
-                Switch(
-                    checked = mode == SandboxMode.PROOT,
-                    onCheckedChange = { vm.toggleMode(it) },
-                    enabled = state is SandboxState.Idle || state is SandboxState.Error,
-                )
-                Spacer(Modifier.width(8.dp))
-
-                when {
-                    state is SandboxState.Running -> {
-                        IconButton(onClick = { vm.clearTerminal() }) {
-                            Icon(Icons.Filled.Clear, contentDescription = "Clear terminal")
-                        }
-                        IconButton(onClick = { vm.restart() }) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Restart")
-                        }
-                        OutlinedButton(onClick = { vm.stop() }) { Text("Stop") }
-                    }
-                    state is SandboxState.Starting || state is SandboxState.Stopping -> {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp
+                    // Mode indicator
+                    Surface(
+                        color = if (mode == SandboxMode.PROOT) {
+                            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                        } else {
+                            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(
+                            text = if (mode == SandboxMode.PROOT) "Alpine" else "Termux",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = if (mode == SandboxMode.PROOT) {
+                                MaterialTheme.colorScheme.onSecondaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onTertiaryContainer
+                            },
                         )
                     }
-                    else -> {
-                        Button(onClick = { vm.start() }) { Text("Start") }
+                }
+
+                // Controls row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Mode toggle (only when not running)
+                    if (state is SandboxState.Idle || state is SandboxState.Error) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Proot",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (mode == SandboxMode.PROOT) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                            Switch(
+                                checked = mode == SandboxMode.TERMUX,
+                                onCheckedChange = { vm.toggleMode(!it) },
+                            )
+                            Text(
+                                "Termux",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (mode == SandboxMode.TERMUX) {
+                                    MaterialTheme.colorScheme.tertiary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                    } else {
+                        Spacer(Modifier.width(80.dp))
+                    }
+
+                    // Action buttons
+                    when {
+                        state is SandboxState.Running -> {
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                IconButton(onClick = { vm.clearTerminal() }) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Clear")
+                                }
+                                IconButton(onClick = { vm.restart() }) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = "Restart")
+                                }
+                                FilledTonalButton(onClick = { vm.stop() }) {
+                                    Icon(Icons.Filled.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Stop")
+                                }
+                            }
+                        }
+                        state is SandboxState.Starting || state is SandboxState.Stopping -> {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    if (state is SandboxState.Starting) "Starting…" else "Stopping…",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        else -> {
+                            Button(onClick = { vm.start() }) {
+                                Icon(Icons.Filled.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Start")
+                            }
+                        }
                     }
                 }
             }
@@ -99,48 +173,65 @@ fun SandboxScreen(vm: SandboxViewModel = viewModel(
 
         // Termux not installed warning
         if (mode == SandboxMode.TERMUX && !vm.isTermuxAvailable) {
-            Surface(color = MaterialTheme.colorScheme.errorContainer) {
-                Text(
-                    "Termux is not installed. Install it from F-Droid, then switch back here.",
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onErrorContainer
-                )
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                    )
+                    Text(
+                        "Termux is not installed. Install from F-Droid to use this mode.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
             }
         }
 
-        // ── Main content ─────────────────────────────────────────────────────
+        // ── Main content ─────────────────────────────────────────────────
         Box(Modifier.weight(1f).fillMaxWidth()) {
             if (state is SandboxState.Running) {
                 TerminalView(
                     lines = lines,
                     onCommand = { vm.sendInput(it) },
-                    modifier = Modifier.fillMaxSize()
+                    isDark = isDark,
+                    modifier = Modifier.fillMaxSize(),
                 )
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    val msg = when (state) {
-                        is SandboxState.Idle -> "Sandbox stopped.\nPress Start to launch Alpine Linux."
-                        is SandboxState.Starting -> "Starting…"
-                        is SandboxState.Stopping -> "Stopping…"
-                        is SandboxState.Error ->
-                            "Error: ${(state as SandboxState.Error).cause.message}"
-                        else -> ""
-                    }
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        if (state is SandboxState.Starting || state is SandboxState.Stopping) {
-                            CircularProgressIndicator()
-                        }
+                        Icon(
+                            imageVector = when (state) {
+                                is SandboxState.Idle -> Icons.Filled.PowerSettingsNew
+                                is SandboxState.Error -> Icons.Filled.Error
+                                else -> Icons.FilledhourglassEmpty
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(64.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                        )
                         Text(
-                            msg,
+                            text = when (state) {
+                                is SandboxState.Idle -> "Sandbox stopped\nPress Start to launch Alpine Linux"
+                                is SandboxState.Error -> "Error: ${(state as SandboxState.Error).cause.message}"
+                                else -> ""
+                            },
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            style = MaterialTheme.typography.bodyLarge,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
                     }
                 }
@@ -155,39 +246,60 @@ fun SandboxScreen(vm: SandboxViewModel = viewModel(
 fun TerminalView(
     lines: List<String>,
     onCommand: (String) -> Unit,
+    isDark: Boolean,
     modifier: Modifier = Modifier,
 ) {
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
+    val bgColor = if (isDark) TerminalBg else Color(0xFFFAFAFA)
+    val fgColor = if (isDark) TerminalFg else Color(0xFF1E1E1E)
+    val greenColor = if (isDark) TerminalGreen else Color(0xFF16A34A)
+    val redColor = if (isDark) TerminalRed else Color(0xFFDC2626)
+    val yellowColor = if (isDark) TerminalYellow else Color(0xFFD97706)
+    val blueColor = if (isDark) TerminalBlue else Color(0xFF2563EB)
+    val commentColor = if (isDark) TerminalComment else Color(0xFF9CA3AF)
+    val inputBgColor = if (isDark) TerminalInput else Color(0xFFF0F0F0)
+
     LaunchedEffect(lines.size) {
         if (lines.isNotEmpty()) listState.animateScrollToItem(lines.size - 1)
     }
 
-    Column(modifier.background(TerminalBg)) {
+    Column(modifier.background(bgColor)) {
         // Output area
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
-            items(lines) { line -> TerminalLine(line) }
+            items(lines) { line ->
+                TerminalLine(
+                    line = line,
+                    fg = fgColor,
+                    green = greenColor,
+                    red = redColor,
+                    yellow = yellowColor,
+                    blue = blueColor,
+                    comment = commentColor,
+                )
+            }
         }
 
         // Input row
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .background(TerminalInput)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .background(inputBgColor)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 "$ ",
-                color = TerminalGreen,
+                color = greenColor,
                 fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp
+                fontSize = 14.sp,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
             )
             OutlinedTextField(
                 value = input,
@@ -196,15 +308,15 @@ fun TerminalView(
                 singleLine = true,
                 textStyle = androidx.compose.ui.text.TextStyle(
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
-                    color = TerminalFg
+                    fontSize = 14.sp,
+                    color = fgColor,
                 ),
                 colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = TerminalGreen,
-                    unfocusedBorderColor = TerminalComment,
-                    focusedTextColor = TerminalFg,
-                    unfocusedTextColor = TerminalFg,
-                    cursorColor = TerminalGreen,
+                    focusedBorderColor = greenColor,
+                    unfocusedBorderColor = commentColor,
+                    focusedTextColor = fgColor,
+                    unfocusedTextColor = fgColor,
+                    cursorColor = greenColor,
                 ),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                 keyboardActions = KeyboardActions(onSend = {
@@ -216,39 +328,48 @@ fun TerminalView(
                 placeholder = {
                     Text(
                         "type command…",
-                        color = TerminalComment,
+                        color = commentColor,
                         fontFamily = FontFamily.Monospace,
-                        fontSize = 13.sp
+                        fontSize = 14.sp,
                     )
-                }
+                },
             )
         }
     }
 }
 
 @Composable
-private fun TerminalLine(line: String) {
+private fun TerminalLine(
+    line: String,
+    fg: Color,
+    green: Color,
+    red: Color,
+    yellow: Color,
+    blue: Color,
+    comment: Color,
+) {
     val annotated = buildAnnotatedString {
         val style = when {
-            line.startsWith("+") -> SpanStyle(color = TerminalGreen)
-            line.startsWith("-") && !line.startsWith("--") -> SpanStyle(color = TerminalRed)
+            line.startsWith("+") -> SpanStyle(color = green)
+            line.startsWith("-") && !line.startsWith("--") -> SpanStyle(color = red)
             line.startsWith("error", ignoreCase = true) ||
-                    line.startsWith("fatal", ignoreCase = true) -> SpanStyle(color = TerminalRed)
-            line.startsWith("warn", ignoreCase = true) -> SpanStyle(color = TerminalYellow)
-            line.startsWith("$") -> SpanStyle(color = TerminalBlue)
-            line.startsWith("#") -> SpanStyle(color = TerminalComment)
-            line.startsWith("[sandbox process") -> SpanStyle(color = TerminalComment)
-            else -> SpanStyle(color = TerminalFg)
+                    line.startsWith("fatal", ignoreCase = true) -> SpanStyle(color = red)
+            line.startsWith("warn", ignoreCase = true) -> SpanStyle(color = yellow)
+            line.startsWith("$") -> SpanStyle(color = blue)
+            line.startsWith("#") -> SpanStyle(color = comment)
+            line.startsWith("[sandbox process") -> SpanStyle(color = comment)
+            else -> SpanStyle(color = fg)
         }
         withStyle(style) { append(line) }
     }
     Text(
         annotated,
-        style = MaterialTheme.typography.bodySmall.copy(
+        style = androidx.compose.ui.text.TextStyle(
             fontFamily = FontFamily.Monospace,
-            fontSize = 12.sp,
-            lineHeight = 16.sp
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+            color = fg,
         ),
-        modifier = Modifier.padding(vertical = 1.dp)
+        modifier = Modifier.padding(vertical = 1.dp),
     )
 }

@@ -1,124 +1,174 @@
 package com.agentshell.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.ui.platform.LocalContext
-import androidx.navigation.NavController
+import com.agentshell.app.db.AgentDatabase
 import com.agentshell.app.db.RunEntity
 import com.agentshell.app.viewmodel.RunsViewModel
 import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import java.util.*
 
-private val STATUS_FILTERS = listOf("All", "RUNNING", "COMPLETED", "FAILED", "CRASHED")
+enum class RunFilter(val label: String, val status: String?) {
+    ALL("All", null),
+    RUNNING("Running", "RUNNING"),
+    COMPLETED("Completed", "COMPLETED"),
+    FAILED("Failed", "FAILED"),
+    CRASHED("Crashed", "CRASHED"),
+}
 
 @Composable
-fun RunsScreen(navController: NavController, vm: RunsViewModel = viewModel(
-    factory = RunsViewModel.Factory(LocalContext.current.applicationContext as android.app.Application)
-)) {
-    val runs by vm.runs.collectAsState()
-    var activeFilter by remember { mutableStateOf("All") }
+fun RunsScreen(
+    onNavigateToRun: (String) -> Unit = {},
+    vm: RunsViewModel = viewModel(
+        factory = RunsViewModel.Factory(
+            AgentDatabase.getInstance(LocalContext.current)
+        )
+    ),
+) {
+    val runs by vm.runs.collectAsState(initial = emptyList())
+    var selectedFilter by remember { mutableStateOf(RunFilter.ALL) }
 
-    val filteredRuns = remember(runs, activeFilter) {
-        if (activeFilter == "All") runs else runs.filter { it.status == activeFilter }
+    val filteredRuns = runs.filter { run ->
+        selectedFilter.status == null || run.status == selectedFilter.status
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text("Runs", style = MaterialTheme.typography.headlineMedium)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        // Header
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                "Inspect agent executions, filter by status, and open detailed timelines.",
+                "Runs",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "Agent execution history",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
-        LazyRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(STATUS_FILTERS) { filter ->
-                val count = if (filter == "All") runs.size else runs.count { it.status == filter }
+        // Filter chips
+        ScrollableRow {
+            RunFilter.entries.forEach { filter ->
+                val count = if (filter.status == null) {
+                    runs.size
+                } else {
+                    runs.count { it.status == filter.status }
+                }
                 FilterChip(
-                    selected = activeFilter == filter,
-                    onClick = { activeFilter = filter },
-                    label = { Text("$filter${if (count > 0) " ($count)" else ""}") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = when (filter) {
-                            "COMPLETED" -> MaterialTheme.colorScheme.primaryContainer
-                            "RUNNING" -> MaterialTheme.colorScheme.secondaryContainer
-                            "FAILED", "CRASHED" -> MaterialTheme.colorScheme.errorContainer
-                            else -> MaterialTheme.colorScheme.surfaceVariant
-                        },
-                    ),
+                    selected = selectedFilter == filter,
+                    onClick = { selectedFilter = filter },
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(filter.label)
+                            Spacer(Modifier.width(4.dp))
+                            Surface(
+                                color = if (selectedFilter == filter) {
+                                    MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.3f)
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f)
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.size(18.dp),
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        count.toString(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (selectedFilter == filter) {
+                                            MaterialTheme.colorScheme.onPrimary
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = when (filter) {
+                                RunFilter.ALL -> Icons.Filled.List
+                                RunFilter.RUNNING -> Icons.Filled.PlayArrow
+                                RunFilter.COMPLETED -> Icons.Filled.CheckCircle
+                                RunFilter.FAILED -> Icons.Filled.Error
+                                RunFilter.CRASHED -> Icons.Filled.Warning
+                            },
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    },
                 )
             }
         }
 
-        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
+        // Run list
         if (filteredRuns.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Card(modifier = Modifier.padding(20.dp)) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(top = 40.dp),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    ),
+                ) {
                     Column(
-                        modifier = Modifier.padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text(
-                            if (runs.isEmpty()) "No runs yet"
-                            else "No runs with status \"$activeFilter\"",
-                            style = MaterialTheme.typography.titleMedium,
+                        Icon(
+                            imageVector = Icons.Filled.PlayCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         )
                         Text(
-                            if (runs.isEmpty()) "Start a task from the Chat screen to create your first run."
-                            else "Switch filters or run a new task from Chat.",
-                            style = MaterialTheme.typography.bodyMedium,
+                            "No runs yet",
+                            style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "Start a task from Chat to see it here",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         )
                     }
                 }
             }
         } else {
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth(),
             ) {
-                items(filteredRuns) { run ->
-                    RunCard(run) { navController.navigate("run_detail/${run.runId}") }
+                items(filteredRuns, key = { it.runId }) { run ->
+                    RunCard(run = run, onClick = { onNavigateToRun(run.runId) })
                 }
             }
         }
@@ -126,92 +176,156 @@ fun RunsScreen(navController: NavController, vm: RunsViewModel = viewModel(
 }
 
 @Composable
-fun RunCard(run: RunEntity, onClick: () -> Unit) {
+private fun RunCard(run: RunEntity, onClick: () -> Unit) {
+    val fmt = remember { SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()) }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .clip(RoundedCornerShape(12.dp)),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            // Title row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = run.preset.takeIf { it.isNotBlank() } ?: "Run ${run.runId.takeLast(8)}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = run.runId.takeLast(12),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                    )
+                }
+
+                // Status badge
+                StatusBadge(status = run.status)
+            }
+
+            // Meta row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        run.preset ?: "Ad-hoc goal",
-                        style = MaterialTheme.typography.titleSmall,
-                    )
-                    Text(
-                        "Run ID …${run.runId.takeLast(10)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    // Time
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.Schedule,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            fmt.format(Date(run.startTime)),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
+                    // Duration
+                    run.endTime?.let { end ->
+                        val durationMs = end - run.startTime
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.Timer,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                formatDuration(durationMs),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
-                RunStatusChip(run.status)
-            }
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                MetaPill("Started ${formatTimestamp(run.startTime)}")
-                MetaPill("Tokens ${formatTokenCost(run.tokenCost)}")
+                // Token cost
+                if (run.tokenCost > 0) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(6.dp),
+                    ) {
+                        Text(
+                            "${"%.1f".format(run.tokenCost)} tok",
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer,
+                        )
+                    }
+                }
             }
-
-            Text(
-                buildString {
-                    append("Duration ")
-                    append(formatDuration(run.startTime, run.endTime))
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
     }
 }
 
 @Composable
-fun RunStatusChip(status: String) {
-    val containerColor = when (status) {
-        "COMPLETED" -> MaterialTheme.colorScheme.primaryContainer
-        "RUNNING" -> MaterialTheme.colorScheme.secondaryContainer
-        "FAILED", "CRASHED" -> MaterialTheme.colorScheme.errorContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant
+private fun StatusBadge(status: String) {
+    val (color, label) = when (status) {
+        "RUNNING" -> MaterialTheme.colorScheme.secondary to "Running"
+        "COMPLETED" -> MaterialTheme.colorScheme.primary to "Done"
+        "FAILED" -> MaterialTheme.colorScheme.error to "Failed"
+        "CRASHED" -> MaterialTheme.colorScheme.error to "Crashed"
+        else -> MaterialTheme.colorScheme.onSurfaceVariant to status
     }
-    Surface(color = containerColor, shape = MaterialTheme.shapes.small) {
-        Text(
-            text = status,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-        )
-    }
-}
 
-@Composable
-private fun MetaPill(text: String) {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.small,
+        color = color.copy(alpha = 0.15f),
+        shape = RoundedCornerShape(8.dp),
     ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .background(
+                        color = color,
+                        shape = androidx.compose.foundation.shape.CircleShape,
+                    ),
+            )
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = color,
+            )
+        }
     }
 }
 
-private fun formatTokenCost(tokenCost: Double): String = String.format(Locale.US, "%.0f", tokenCost)
-
-private fun formatTimestamp(timestamp: Long): String =
-    SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(timestamp))
-
-private fun formatDuration(startTime: Long, endTime: Long?): String {
-    if (endTime == null) return "in progress"
-    val seconds = ((endTime - startTime) / 1000).coerceAtLeast(0)
-    return if (seconds < 60) "${seconds}s" else "${seconds / 60}m ${seconds % 60}s"
+private fun formatDuration(ms: Long): String {
+    val seconds = ms / 1000
+    return when {
+        seconds < 60 -> "${seconds}s"
+        seconds < 3600 -> "${seconds / 60}m ${seconds % 60}s"
+        else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
+    }
 }

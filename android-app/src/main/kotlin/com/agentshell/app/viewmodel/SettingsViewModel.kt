@@ -35,6 +35,9 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     private val _sandboxStatus = MutableStateFlow("Stopped")
     val sandboxStatus = _sandboxStatus.asStateFlow()
 
+    val isTermuxInstalled: Boolean
+        get() = com.agentshell.app.service.TermuxConnector(app).isTermuxInstalled
+
     fun setSandboxEnabled(enabled: Boolean) {
         prefs.edit().putBoolean("sandbox_enabled", enabled).apply()
         _sandboxEnabled.value = enabled
@@ -64,17 +67,16 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
         prefs.edit().putBoolean("sandbox_enabled", false).apply()
     }
 
-    fun exportPackage() {
+    fun exportPackage(uri: android.net.Uri) {
         viewModelScope.launch {
-            val uri = com.agentshell.app.utils.PackageHelper.exportPackage(app)
-            if (uri != null) {
-                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                    type = "application/zip"
-                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            val exportedUri = com.agentshell.app.utils.PackageHelper.exportPackage(app)
+            if (exportedUri != null) {
+                // Copy to user-selected URI
+                app.contentResolver.openInputStream(exportedUri)?.use { input ->
+                    app.contentResolver.openOutputStream(uri)?.use { output ->
+                        input.copyTo(output)
+                    }
                 }
-                app.startActivity(shareIntent)
             }
         }
     }

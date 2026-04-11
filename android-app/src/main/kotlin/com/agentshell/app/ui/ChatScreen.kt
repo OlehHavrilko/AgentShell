@@ -1,64 +1,33 @@
 package com.agentshell.app.ui
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.agentshell.app.llm.AndroidProviderCatalog
 import com.agentshell.app.viewmodel.ChatMessage
 import com.agentshell.app.viewmodel.ChatViewModel
@@ -69,9 +38,10 @@ private val QUICK_PROMPTS = listOf(
     "Start the sandbox and inspect the environment",
 )
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
-    onOpenSettings: () -> Unit = {},
+    onOpenDrawer: () -> Unit = {},
     vm: ChatViewModel = viewModel(
         factory = ChatViewModel.Factory(
             LocalContext.current.applicationContext as android.app.Application
@@ -85,9 +55,7 @@ fun ChatScreen(
     val serviceConnected by vm.serviceConnected.collectAsState()
     val isProviderReady by vm.isProviderReady.collectAsState()
     var inputText by remember { mutableStateOf("") }
-    var showProviderMenu by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
-    val providers = AndroidProviderCatalog.supported
     val selectedProviderInfo = AndroidProviderCatalog.byId(selectedProvider)
 
     LaunchedEffect(messages.size) {
@@ -95,150 +63,11 @@ fun ChatScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Surface(tonalElevation = 2.dp) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("AgentShell", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Chat-first workspace for agent tasks",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (messages.isNotEmpty()) {
-                        IconButton(onClick = { vm.clearMessages() }) {
-                            Icon(
-                                imageVector = Icons.Filled.Clear,
-                                contentDescription = "Clear conversation",
-                            )
-                        }
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(
-                            imageVector = Icons.Filled.Settings,
-                            contentDescription = "Open settings",
-                        )
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box {
-                        TextButton(onClick = { showProviderMenu = true }) {
-                            Text(
-                                selectedProviderInfo?.displayName ?: selectedProvider,
-                                style = MaterialTheme.typography.labelLarge,
-                            )
-                            Icon(Icons.Filled.ArrowDropDown, contentDescription = "Select provider")
-                        }
-                        DropdownMenu(
-                            expanded = showProviderMenu,
-                            onDismissRequest = { showProviderMenu = false },
-                        ) {
-                            providers.forEach { provider ->
-                                DropdownMenuItem(
-                                    text = { Text(provider.displayName) },
-                                    onClick = {
-                                        vm.selectProvider(provider.id)
-                                        showProviderMenu = false
-                                    },
-                                    leadingIcon = if (provider.id == selectedProvider) {
-                                        { Text("✓") }
-                                    } else {
-                                        null
-                                    },
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.weight(1f))
-
-                    StatusPill(
-                        text = if (serviceConnected) "Service connected" else "Ready",
-                        containerColor = if (serviceConnected) MaterialTheme.colorScheme.primaryContainer
-                        else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (serviceConnected) MaterialTheme.colorScheme.onPrimaryContainer
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatusPill(
-                        text = if (selectedProviderInfo?.isLocal == true) "Local provider" else "Cloud provider",
-                        containerColor = if (selectedProviderInfo?.isLocal == true) {
-                            MaterialTheme.colorScheme.secondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.tertiaryContainer
-                        },
-                        contentColor = if (selectedProviderInfo?.isLocal == true) {
-                            MaterialTheme.colorScheme.onSecondaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onTertiaryContainer
-                        },
-                    )
-                    selectedProviderInfo?.takeIf { it.defaultModel.isNotBlank() }?.let {
-                        StatusPill(
-                            text = it.defaultModel,
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-        }
-
-        pendingApproval?.let { req ->
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text("Approval required", style = MaterialTheme.typography.titleMedium)
-                    Text(req.impactPreview, style = MaterialTheme.typography.bodyMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { vm.approve(req.approvalId) }) { Text("Approve") }
-                        OutlinedButton(onClick = { vm.reject(req.approvalId) }) { Text("Reject") }
-                    }
-                }
-            }
-        }
-
-        if (!isProviderReady) {
-            Surface(
-                color = MaterialTheme.colorScheme.tertiaryContainer,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "⚡ ${selectedProviderInfo?.displayName ?: selectedProvider} needs an API key to work.",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onOpenSettings) { Text("Configure") }
-                }
-            }
-        }
-
+        // ── Messages area ─────────────────────────────────────────────────
         if (messages.isEmpty()) {
             ChatWelcomeState(
+                providerName = selectedProviderInfo?.displayName ?: selectedProvider,
+                isProviderReady = isProviderReady,
                 onPromptClick = { prompt ->
                     inputText = prompt
                 },
@@ -248,49 +77,151 @@ fun ChatScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(messages) { msg -> ChatBubble(msg) }
+                if (isLoading) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            horizontalArrangement = Arrangement.Start,
+                        ) {
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                ),
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    repeat(3) { idx ->
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .background(
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                                    shape = RoundedCornerShape(50),
+                                                ),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        if (isLoading) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
+        // ── Approval banner ──────────────────────────────────────────────
+        pendingApproval?.let { req ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                ),
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Approval required",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                    Text(
+                        req.impactPreview,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(onClick = { vm.reject(req.approvalId) }) {
+                            Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Reject")
+                        }
+                        Button(onClick = { vm.approve(req.approvalId) }) {
+                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Approve")
+                        }
+                    }
+                }
+            }
         }
 
-        Surface(tonalElevation = 3.dp) {
+        // ── Input bar ────────────────────────────────────────────────────
+        Surface(
+            tonalElevation = 2.dp,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                // Quick prompts when conversation is empty
                 if (messages.isEmpty()) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(QUICK_PROMPTS) { prompt ->
                             SuggestionChip(
                                 onClick = { inputText = prompt },
-                                label = { Text(prompt) },
+                                label = { Text(prompt, style = MaterialTheme.typography.labelMedium) },
                             )
                         }
                     }
                 }
 
+                // Provider pill + input + send
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.Bottom,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Provider selector
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.padding(end = 8.dp),
+                    ) {
+                        Text(
+                            text = selectedProviderInfo?.displayName?.take(3)?.uppercase() ?: "???",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
-                        placeholder = { Text("Describe the task, command, or goal…") },
+                        placeholder = { Text("Describe the task…") },
                         modifier = Modifier.weight(1f),
                         singleLine = false,
                         maxLines = 4,
+                        shape = RoundedCornerShape(16.dp),
                     )
+
                     Spacer(Modifier.width(8.dp))
-                    Button(
+
+                    FilledIconButton(
                         onClick = {
                             val prompt = inputText.trim()
                             if (prompt.isNotEmpty()) {
@@ -300,7 +231,7 @@ fun ChatScreen(
                         },
                         enabled = !isLoading && inputText.isNotBlank(),
                     ) {
-                        Text("Run")
+                        Icon(Icons.Filled.Send, contentDescription = "Send")
                     }
                 }
             }
@@ -310,52 +241,76 @@ fun ChatScreen(
 
 @Composable
 private fun ChatWelcomeState(
+    providerName: String,
+    isProviderReady: Boolean,
     onPromptClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Card(
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
+                .fillMaxWidth(0.85f)
                 .padding(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+            // Logo / title
+            Text(
+                "AgentShell",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+            )
+
+            Text(
+                "Run tasks, inspect code, or connect to a sandbox.\nChoose a provider and describe the outcome you want.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+
+            // Provider status
+            Surface(
+                color = if (isProviderReady) {
+                    MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)
+                } else {
+                    MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                },
+                shape = RoundedCornerShape(12.dp),
             ) {
-                Text("AgentShell", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "Run a quick task, inspect the project, or connect a local sandbox. Choose a provider and describe the outcome you want.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(QUICK_PROMPTS) { prompt ->
-                        SuggestionChip(
-                            onClick = { onPromptClick(prompt) },
-                            label = { Text(prompt) },
-                        )
-                    }
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = if (isProviderReady) Icons.Filled.CheckCircle else Icons.Filled.Warning,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = if (isProviderReady) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
+                    )
+                    Text(
+                        text = if (isProviderReady) "$providerName ready" else "$providerName needs API key",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (isProviderReady) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+
+            // Quick prompts
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(QUICK_PROMPTS) { prompt ->
+                    FilterChip(
+                        selected = false,
+                        onClick = { onPromptClick(prompt) },
+                        label = { Text(prompt) },
+                        leadingIcon = {
+                            Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
+                        },
+                    )
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun StatusPill(
-    text: String,
-    containerColor: androidx.compose.ui.graphics.Color,
-    contentColor: androidx.compose.ui.graphics.Color,
-) {
-    Surface(color = containerColor, shape = MaterialTheme.shapes.small) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = contentColor,
-        )
     }
 }
 
@@ -372,52 +327,79 @@ fun ChatBubble(msg: ChatMessage) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 2.dp),
+                .padding(vertical = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                msg.content,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.outline,
-            )
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text(
+                    msg.content,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         return
     }
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 2.dp),
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
+        val bubbleShape = RoundedCornerShape(
+            topStart = 16.dp,
+            topEnd = 16.dp,
+            bottomStart = if (isUser) 16.dp else 4.dp,
+            bottomEnd = if (isUser) 4.dp else 16.dp,
+        )
+
         Card(
             modifier = Modifier
-                .fillMaxWidth(0.86f)
-                .widthIn(max = 360.dp)
-                .combinedClickable(
-                    onClick = {},
-                    onLongClick = { clipboardManager.setText(AnnotatedString(msg.content)) },
-                ),
+                .widthIn(max = 320.dp)
+                .clip(bubbleShape),
             colors = CardDefaults.cardColors(
                 containerColor = when {
                     isUser -> MaterialTheme.colorScheme.primaryContainer
                     isError -> MaterialTheme.colorScheme.errorContainer
-                    isTool -> MaterialTheme.colorScheme.tertiaryContainer
+                    isTool -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.7f)
                     else -> MaterialTheme.colorScheme.surfaceVariant
                 },
             ),
         ) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    when {
-                        isUser -> "You"
-                        isError -> "Error"
-                        isTool -> "Tool output"
-                        else -> "Agent"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
-                )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                // Role label
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        when {
+                            isUser -> "You"
+                            isError -> "Error"
+                            isTool -> "Tool"
+                            else -> "Agent"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = when {
+                            isUser -> MaterialTheme.colorScheme.onPrimaryContainer
+                            isError -> MaterialTheme.colorScheme.onErrorContainer
+                            isTool -> MaterialTheme.colorScheme.onTertiaryContainer
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+
+                // Content
                 if (msg.role == "assistant") {
                     MarkdownText(
                         text = msg.content,
@@ -444,13 +426,12 @@ fun ChatBubble(msg: ChatMessage) {
  * Renders a minimal subset of Markdown as an AnnotatedString.
  * Handles: **bold**, *italic*, `inline code`, # headings (h1-h3), and - bullet list items.
  * Code blocks (```...```) are rendered as a Surface with monospace text.
- * Everything else is left as-is.
  */
 @Composable
 fun MarkdownText(
     text: String,
     modifier: Modifier = Modifier,
-    style: TextStyle = MaterialTheme.typography.bodyMedium,
+    style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyMedium,
     color: Color = MaterialTheme.colorScheme.onSurface,
 ) {
     val codeBlockColor = MaterialTheme.colorScheme.surfaceVariant
@@ -469,12 +450,12 @@ fun MarkdownText(
         segments.add {
             Surface(
                 color = codeBlockColor,
-                shape = MaterialTheme.shapes.small,
+                shape = RoundedCornerShape(8.dp),
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
             ) {
                 Text(
                     code,
-                    modifier = Modifier.padding(10.dp),
+                    modifier = Modifier.padding(12.dp),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = FontFamily.Monospace,
                         color = codeTextColor,
@@ -493,7 +474,7 @@ fun MarkdownText(
         val annotated = buildInlineAnnotatedString(text, style, color)
         Text(annotated, modifier = modifier, style = style)
     } else {
-        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             segments.forEach { it() }
         }
     }
@@ -501,7 +482,7 @@ fun MarkdownText(
 
 private fun buildInlineAnnotatedString(
     text: String,
-    style: TextStyle,
+    style: androidx.compose.ui.text.TextStyle,
     defaultColor: Color,
 ): AnnotatedString {
     return buildAnnotatedString {
@@ -542,7 +523,7 @@ private fun buildInlineAnnotatedString(
 
 private fun AnnotatedString.Builder.appendInlineFormatted(
     text: String,
-    style: TextStyle,
+    style: androidx.compose.ui.text.TextStyle,
     defaultColor: Color,
 ) {
     val inlineRegex = Regex("(\\*\\*(.+?)\\*\\*)|(\\*(.+?)\\*)|(`(.+?)`)")
@@ -555,9 +536,9 @@ private fun AnnotatedString.Builder.appendInlineFormatted(
             match.groupValues[1].isNotEmpty() ->
                 withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = defaultColor)) { append(match.groupValues[2]) }
             match.groupValues[3].isNotEmpty() ->
-                withStyle(SpanStyle(fontStyle = FontStyle.Italic, color = defaultColor)) { append(match.groupValues[4]) }
+                withStyle(SpanStyle(fontStyle = androidx.compose.ui.text.font.FontStyle.Italic, color = defaultColor)) { append(match.groupValues[4]) }
             match.groupValues[5].isNotEmpty() ->
-                withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = androidx.compose.ui.graphics.Color(0x22888888), color = defaultColor)) { append(match.groupValues[6]) }
+                withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = Color(0x22888888), color = defaultColor)) { append(match.groupValues[6]) }
         }
         last = match.range.last + 1
     }

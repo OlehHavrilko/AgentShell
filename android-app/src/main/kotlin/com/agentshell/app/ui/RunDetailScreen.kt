@@ -1,13 +1,22 @@
 package com.agentshell.app.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -49,41 +58,71 @@ fun RunDetailScreen(runId: String) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Run details", style = MaterialTheme.typography.headlineSmall)
             Text(
-                "Run …${runId.takeLast(12)}",
+                "Run Details",
+                style = MaterialTheme.typography.headlineLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                "Timeline for run …${runId.takeLast(12)}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
         if (steps.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Card {
+            Box(
+                Modifier.fillMaxSize().padding(top = 40.dp),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    ),
+                ) {
                     Column(
-                        modifier = Modifier.padding(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Text("No steps recorded", style = MaterialTheme.typography.titleMedium)
+                        Icon(
+                            Icons.Filled.Assignment,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        )
                         Text(
-                            "This run does not have timeline entries yet. New runs will populate this screen as tools execute.",
+                            "No steps recorded",
+                            style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "This run does not have timeline entries yet",
                             style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         )
                     }
                 }
             }
         } else {
+            // Summary pills
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                DetailPill("${steps.size} steps")
-                DetailPill(
-                    steps.count { it.status == "COMPLETED" }.toString() + " completed",
+                SummaryPill(
+                    icon = Icons.Filled.Steps,
+                    text = "${steps.size} steps",
+                )
+                SummaryPill(
+                    icon = Icons.Filled.CheckCircle,
+                    text = "${steps.count { it.status == "COMPLETED" }} done",
+                    color = MaterialTheme.colorScheme.secondary,
                 )
             }
+
+            // Step list
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(steps) { step -> StepCard(step) }
             }
@@ -92,105 +131,213 @@ fun RunDetailScreen(runId: String) {
 }
 
 @Composable
-private fun StepCard(step: StepEntity) {
-    val fmt = remember { SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()) }
-    val statusColor = when (step.status) {
-        "COMPLETED" -> MaterialTheme.colorScheme.primaryContainer
-        "FAILED" -> MaterialTheme.colorScheme.errorContainer
-        "RUNNING" -> MaterialTheme.colorScheme.secondaryContainer
-        else -> MaterialTheme.colorScheme.surfaceVariant
+private fun SummaryPill(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String, color: Color = MaterialTheme.colorScheme.primary) {
+    Surface(
+        color = color.copy(alpha = 0.1f),
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = color,
+            )
+            Text(
+                text,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                color = color,
+            )
+        }
     }
+}
+
+@Composable
+private fun StepCard(step: StepEntity) {
+    val fmt = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
     ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // Header row
             Row(
-                Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "#${step.stepIndex + 1} ${step.toolId}",
-                    style = MaterialTheme.typography.titleSmall,
-                )
-                Surface(color = statusColor, shape = MaterialTheme.shapes.small) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Step number
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(6.dp),
+                    ) {
+                        Text(
+                            "#${step.stepIndex + 1}",
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
                     Text(
-                        step.status,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        step.toolId,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+
+                // Status badge
+                val (badgeColor, badgeLabel) = when (step.status) {
+                    "COMPLETED" -> MaterialTheme.colorScheme.secondary to "Done"
+                    "FAILED" -> MaterialTheme.colorScheme.error to "Failed"
+                    "RUNNING" -> MaterialTheme.colorScheme.primary to "Running"
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant to step.status
+                }
+                Surface(
+                    color = badgeColor.copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(8.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(
+                                    color = badgeColor,
+                                    shape = androidx.compose.foundation.shape.CircleShape,
+                                ),
+                        )
+                        Text(
+                            badgeLabel,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = badgeColor,
+                        )
+                    }
+                }
+            }
+
+            // Timestamps
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.Schedule,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        fmt.format(Date(step.startTime)),
                         style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+                step.endTime?.let {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.Timer,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            formatStepDuration(step.startTime, it),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
             }
 
-            Text(
-                "Started: ${fmt.format(Date(step.startTime))}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            step.endTime?.let {
-                Text(
-                    "Duration: ${formatStepDuration(step.startTime, it)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
+            // Input
             step.input?.takeIf { it.isNotBlank() }?.let { input ->
-                Text("Input", style = MaterialTheme.typography.labelSmall)
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = MaterialTheme.shapes.extraSmall,
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        "▶ ${input.take(200)}",
-                        modifier = Modifier.padding(6.dp),
-                        style = MaterialTheme.typography.bodySmall,
+                        "Input",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(
+                            input.take(200),
+                            modifier = Modifier.padding(10.dp),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
 
+            // Output
             step.output?.takeIf { it.isNotBlank() }?.let { output ->
-                Text("Output", style = MaterialTheme.typography.labelSmall)
-                Surface(
-                    color = if (step.status == "FAILED")
-                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-                    else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
-                    shape = MaterialTheme.shapes.extraSmall,
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(
-                        output.take(300),
-                        modifier = Modifier.padding(6.dp),
-                        style = MaterialTheme.typography.bodySmall,
+                        "Output",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Surface(
+                        color = if (step.status == "FAILED") {
+                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f)
+                        } else {
+                            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f)
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                    ) {
+                        Text(
+                            output.take(300),
+                            modifier = Modifier.padding(10.dp),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = if (step.status == "FAILED") {
+                                MaterialTheme.colorScheme.onErrorContainer
+                            } else {
+                                MaterialTheme.colorScheme.onTertiaryContainer
+                            },
+                            maxLines = 4,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-@Composable
-private fun DetailPill(text: String) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.small,
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
 private fun formatStepDuration(startTime: Long, endTime: Long): String {
     val durationMs = (endTime - startTime).coerceAtLeast(0)
     return if (durationMs < 1_000) {
-        "${durationMs} ms"
+        "${durationMs}ms"
     } else {
         val seconds = durationMs / 1_000
-        "${seconds}s ${durationMs % 1_000}ms"
+        "${seconds}s"
     }
 }
