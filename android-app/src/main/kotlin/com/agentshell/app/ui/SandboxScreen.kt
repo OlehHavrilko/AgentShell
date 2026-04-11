@@ -1,6 +1,8 @@
 package com.agentshell.app.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -16,11 +18,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.isSystemInDarkTheme
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -217,7 +219,7 @@ fun SandboxScreen(vm: SandboxViewModel = viewModel(
                             imageVector = when (state) {
                                 is SandboxState.Idle -> Icons.Filled.PowerSettingsNew
                                 is SandboxState.Error -> Icons.Filled.Error
-                                else -> Icons.Filled.hourglass
+                                else -> Icons.Filled.hourglass_empty
                             },
                             contentDescription = null,
                             modifier = Modifier.size(64.dp),

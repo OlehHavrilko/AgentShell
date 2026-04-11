@@ -72,12 +72,10 @@ fun MainScreen() {
                 // Navigation items
                 drawerItems.forEach { item ->
                     NavigationDrawerItem(
-                        icon = {
-                            Icon(
-                                imageVector = item.icon,
-                                contentDescription = null,
-                            )
-                        },
+                        icon = Icon(
+                            imageVector = item.icon,
+                            contentDescription = null,
+                        ),
                         label = {
                             Text(
                                 text = item.label,

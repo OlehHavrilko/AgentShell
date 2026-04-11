@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,7 +39,7 @@ fun RunsScreen(
     onNavigateToRun: (String) -> Unit = {},
     vm: RunsViewModel = viewModel(
         factory = RunsViewModel.Factory(
-            AgentDatabase.getInstance(LocalContext.current)
+            LocalContext.current.applicationContext as android.app.Application
         )
     ),
 ) {
@@ -74,7 +75,7 @@ fun RunsScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            items(RunFilter.entries.toList()) { filter ->
+            items(RunFilter.values().toList()) { filter: RunFilter ->
                 val count = if (filter.status == null) {
                     runs.size
                 } else {
@@ -219,7 +220,7 @@ private fun RunCard(run: RunEntity, onClick: () -> Unit) {
                 }
 
                 // Status badge
-                StatusBadge(status = run.status)
+                StatusBadge(status = run.status ?: "UNKNOWN")
             }
 
             // Meta row
