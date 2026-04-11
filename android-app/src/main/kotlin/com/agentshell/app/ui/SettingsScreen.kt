@@ -17,11 +17,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import com.agentshell.app.viewmodel.SettingsViewModel
 
 @Composable
-fun SettingsScreen(navController: NavController? = null, vm: SettingsViewModel = viewModel()) {
+fun SettingsScreen(navController: NavController? = null, vm: SettingsViewModel = viewModel(
+    factory = SettingsViewModel.Factory(LocalContext.current.applicationContext as android.app.Application)
+)) {
     val sandboxEnabled by vm.sandboxEnabled.collectAsState()
     val termuxEnabled by vm.termuxEnabled.collectAsState()
     val sandboxStatus by vm.sandboxStatus.collectAsState()

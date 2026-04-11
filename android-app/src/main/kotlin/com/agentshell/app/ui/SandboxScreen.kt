@@ -23,6 +23,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
 import com.agentshell.app.service.SandboxMode
 import com.agentshell.app.service.SandboxState
 import com.agentshell.app.viewmodel.SandboxViewModel
@@ -37,7 +38,9 @@ private val TerminalComment = Color(0xFF6272A4)
 private val TerminalInput = Color(0xFF313244)
 
 @Composable
-fun SandboxScreen(vm: SandboxViewModel = viewModel()) {
+fun SandboxScreen(vm: SandboxViewModel = viewModel(
+    factory = SandboxViewModel.Factory(LocalContext.current.applicationContext as android.app.Application)
+)) {
     val state by vm.sandboxState.collectAsState()
     val mode by vm.currentMode.collectAsState()
     val lines by vm.terminalLines.collectAsState()

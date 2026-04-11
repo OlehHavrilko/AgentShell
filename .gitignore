@@ -5,3 +5,6 @@ build/
 *.log
 __pycache__/
 *.pyc
+
+.qwen/
+gha-creds-*.json

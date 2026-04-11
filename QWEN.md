@@ -37,7 +37,7 @@ dev.agentshell
 ├── observability/  — Metrics, heartbeat, watchdog services
 ├── orchestrator/   — Main execution orchestrizer
 ├── report/         — Reporting utilities
-├── rules/          — YAML risk rule engine + risk scorer
+├── rules/          — YAML risk rule engine + risk scorers
 ├── runtime/        — Agent runtime (start/resume decision)
 ├── security/       — Secrets vault, sandbox guard, schema validator
 ├── state/          — State store (in-memory + SQLite implementations)
@@ -195,3 +195,45 @@ Override `agentshell.repoRoot` system property to set the repo root path.
 | `/approvals` | GET | List pending requests |
 | `/approvals/{id}/approve` | POST | Approve a request |
 | `/approvals/{id}/reject` | POST | Reject a request |
+
+## LLM Providers
+
+| Provider | Env var | Default model |
+|----------|---------|---------------|
+| `openai` | `OPENAI_API_KEY` | `gpt-4o` |
+| `ollama` | — | `qwen2.5-coder:7b` |
+| `openrouter` | `OPENROUTER_API_KEY` | `anthropic/claude-3-5-sonnet` |
+| `gemini` | `GEMINI_API_KEY` | `gemini-2.0-flash` |
+
+## Risk Rules (YAML)
+
+Edit `src/main/resources/rules/risk-rules.yaml` (or pass a custom path) to configure risk behaviour declaratively:
+
+```yaml
+defaultScore: 30
+
+rules:
+  - name: block-rm-rf
+    pattern: "rm\\s+-[a-zA-Z]*r[a-zA-Z]*f"
+    block: true
+
+  - name: require-approval-git-push
+    tool: git_exec
+    pattern: "push"
+    score: 80
+    requireApproval: true
+
+  - name: high-risk-sudo
+    pattern: "\\bsudo\\b"
+    score: 80
+```
+
+Rule fields: `tool` (exact match), `pattern` (regex on args JSON), `score` (set), `addScore` (delta), `requireApproval`, `block`.
+
+## Agent Presets
+
+| Preset | Description |
+|--------|-------------|
+| `code-review` | `git diff HEAD~1`, analyses changed files, outputs inline review |
+| `git-workflow` | writes conventional-commit message + PR description |
+| `project-scan` | scans for TODOs/FIXMEs, writes `REPORT.md` |

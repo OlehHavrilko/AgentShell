@@ -13,11 +13,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
 import com.agentshell.app.viewmodel.ProviderUiState
 import com.agentshell.app.viewmodel.SettingsViewModel
 
 @Composable
-fun ProvidersScreen(vm: SettingsViewModel = viewModel()) {
+fun ProvidersScreen(vm: SettingsViewModel = viewModel(
+    factory = SettingsViewModel.Factory(LocalContext.current.applicationContext as android.app.Application)
+)) {
     val providers by vm.providers.collectAsState()
     var editingProvider by remember { mutableStateOf<ProviderUiState?>(null) }
 

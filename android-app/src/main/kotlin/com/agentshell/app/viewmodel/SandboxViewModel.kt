@@ -2,6 +2,8 @@ package com.agentshell.app.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.agentshell.app.service.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,10 +28,27 @@ class SandboxViewModel(app: Application) : AndroidViewModel(app) {
     val isTermuxAvailable: Boolean get() = termux.isTermuxInstalled
 
     init {
-        // Accumulate up to 500 lines; older lines are dropped to avoid memory pressure.
+        // Collect terminal output from the proot sandbox directly.
+        // Lines are accumulated and capped at 500 to avoid memory pressure.
         viewModelScope.launch {
             proot.outputFlow.collect { line ->
                 _terminalLines.value = (_terminalLines.value + line).takeLast(500)
+            }
+        }
+        // Also collect from MCP channel when active
+        viewModelScope.launch {
+            manager.state.collect { state ->
+                if (state is SandboxState.Running) {
+                    manager.activeChannel?.let { channel ->
+                        launch {
+                            channel.receive().collect { msg ->
+                                msg.payload?.let { payload ->
+                                    _terminalLines.value = (_terminalLines.value + payload).takeLast(500)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -47,7 +66,6 @@ class SandboxViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun sendInput(command: String) = viewModelScope.launch {
-        // Echo the command to terminal output
         _terminalLines.value = _terminalLines.value + "$ $command"
         proot.exec(command)
     }
@@ -55,5 +73,12 @@ class SandboxViewModel(app: Application) : AndroidViewModel(app) {
     override fun onCleared() {
         viewModelScope.launch { manager.stop() }
         super.onCleared()
+    }
+
+    // ── ViewModel Factory ──────────────────────────────────────────────────────
+    class Factory(private val app: Application) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            SandboxViewModel(app) as T
     }
 }

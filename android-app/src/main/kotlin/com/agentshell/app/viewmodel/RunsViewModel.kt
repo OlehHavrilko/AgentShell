@@ -2,6 +2,8 @@ package com.agentshell.app.viewmodel
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.agentshell.app.db.AgentDatabase
 import kotlinx.coroutines.flow.SharingStarted
@@ -12,4 +14,11 @@ class RunsViewModel(app: Application) : AndroidViewModel(app) {
 
     val runs = db.runDao().allRuns()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // ── ViewModel Factory ──────────────────────────────────────────────────────
+    class Factory(private val app: Application) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            RunsViewModel(app) as T
+    }
 }

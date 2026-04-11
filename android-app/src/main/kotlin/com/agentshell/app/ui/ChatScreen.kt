@@ -49,6 +49,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -71,7 +72,11 @@ private val QUICK_PROMPTS = listOf(
 @Composable
 fun ChatScreen(
     onOpenSettings: () -> Unit = {},
-    vm: ChatViewModel = viewModel(),
+    vm: ChatViewModel = viewModel(
+        factory = ChatViewModel.Factory(
+            LocalContext.current.applicationContext as android.app.Application
+        )
+    ),
 ) {
     val messages by vm.messages.collectAsState()
     val isLoading by vm.isLoading.collectAsState()

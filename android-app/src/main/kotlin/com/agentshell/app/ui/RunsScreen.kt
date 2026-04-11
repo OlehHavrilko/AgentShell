@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavController
 import com.agentshell.app.db.RunEntity
 import com.agentshell.app.viewmodel.RunsViewModel
@@ -39,7 +40,9 @@ import java.util.Locale
 private val STATUS_FILTERS = listOf("All", "RUNNING", "COMPLETED", "FAILED", "CRASHED")
 
 @Composable
-fun RunsScreen(navController: NavController, vm: RunsViewModel = viewModel()) {
+fun RunsScreen(navController: NavController, vm: RunsViewModel = viewModel(
+    factory = RunsViewModel.Factory(LocalContext.current.applicationContext as android.app.Application)
+)) {
     val runs by vm.runs.collectAsState()
     var activeFilter by remember { mutableStateOf("All") }
 

@@ -7,10 +7,13 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.agentshell.app.service.AgentMessage
 import com.agentshell.app.service.AgentRuntimeService
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -47,6 +50,7 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
     // ── Service binding ────────────────────────────────────────────────────────
     private var boundService: AgentRuntimeService? = null
     private var eventJob: Job? = null
+    private var pendingGoal: String? = null // Queue goal until service binds
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
@@ -54,6 +58,12 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
             boundService = svc
             _serviceConnected.value = true
             observeEvents(svc)
+
+            // If there's a queued goal from send() before binding, dispatch it now
+            pendingGoal?.let { goal ->
+                pendingGoal = null
+                svc.startJvmAgent(goal = goal, providerId = _selectedProvider.value)
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName) {
@@ -132,15 +142,15 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
 
         val svc = boundService
         if (svc == null) {
-            // Auto-start service in JVM mode and bind
+            // Service not yet bound — queue the goal and start+bind the service.
+            // The onServiceConnected callback will dispatch the queued goal once bound.
+            pendingGoal = text
             val startIntent = Intent(app, AgentRuntimeService::class.java).apply {
                 action = AgentRuntimeService.ACTION_START_JVM
                 putExtra(AgentRuntimeService.EXTRA_GOAL, text)
                 putExtra(AgentRuntimeService.EXTRA_PROVIDER, _selectedProvider.value)
             }
             app.startForegroundService(startIntent)
-            // Bind with BIND_AUTO_CREATE so the connection is established even if service
-            // takes a moment to fully initialise after startForegroundService
             app.bindService(
                 Intent(app, AgentRuntimeService::class.java),
                 serviceConnection,
@@ -174,5 +184,12 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
         runCatching { prefs.unregisterOnSharedPreferenceChangeListener(prefListener) }
         runCatching { app.unbindService(serviceConnection) }
         super.onCleared()
+    }
+
+    // ── ViewModel Factory ──────────────────────────────────────────────────────
+    class Factory(private val app: Application) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            ChatViewModel(app) as T
     }
 }

@@ -1,8 +1,11 @@
 package com.agentshell.app.viewmodel
 
 import android.app.Application
+import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.agentshell.app.llm.AndroidProviderCatalog
 import com.agentshell.app.service.AgentRuntimeService
@@ -21,7 +24,7 @@ data class ProviderUiState(
 )
 
 class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
-    private val prefs = app.getSharedPreferences("agentshell", android.content.Context.MODE_PRIVATE)
+    private val prefs = app.getSharedPreferences("agentshell", Context.MODE_PRIVATE)
 
     private val _sandboxEnabled = MutableStateFlow(prefs.getBoolean("sandbox_enabled", false))
     val sandboxEnabled = _sandboxEnabled.asStateFlow()
@@ -65,7 +68,6 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val uri = com.agentshell.app.utils.PackageHelper.exportPackage(app)
             if (uri != null) {
-                // Share the exported ZIP via system intent
                 val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                     type = "application/zip"
                     putExtra(android.content.Intent.EXTRA_STREAM, uri)
@@ -86,12 +88,20 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     private val _providers = MutableStateFlow<List<ProviderUiState>>(buildDefaultProviders())
     val providers = _providers.asStateFlow()
 
+    /** Select the active provider — synced with ChatViewModel via SharedPreferences. */
+    fun selectProvider(id: String) {
+        prefs.edit().putString("selected_provider", id).apply()
+        _providers.value = _providers.value.map {
+            if (it.id == id) it.copy(enabled = true) else it
+        }
+    }
+
     private fun buildDefaultProviders() = AndroidProviderCatalog.supported.map { provider ->
         ProviderUiState(
             id = provider.id,
             displayName = provider.displayName,
             isLocal = provider.isLocal,
-            enabled = prefs.getBoolean("prov_enabled_${provider.id}", provider.id == "ollama"),
+            enabled = prefs.getBoolean("prov_enabled_${provider.id}", provider.isLocal),
             apiKey = if (provider.isLocal) "" else prefs.getString("prov_apikey_${provider.id}", "") ?: "",
             model = prefs.getString("prov_model_${provider.id}", provider.defaultModel) ?: provider.defaultModel,
             host = prefs.getString("prov_host_${provider.id}", provider.defaultHost) ?: provider.defaultHost,
@@ -112,5 +122,12 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
         _providers.value = _providers.value.map {
             if (it.id == id) it.copy(apiKey = apiKey, model = model, host = host) else it
         }
+    }
+
+    // ── ViewModel Factory ──────────────────────────────────────────────────────
+    class Factory(private val app: Application) : ViewModelProvider.Factory {
+        @Suppress("UNCHECKED_CAST")
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            SettingsViewModel(app) as T
     }
 }
