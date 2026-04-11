@@ -205,7 +205,7 @@ private fun RunCard(run: RunEntity, onClick: () -> Unit) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = run.preset.takeIf { it.isNotBlank() } ?: "Run ${run.runId.takeLast(8)}",
+                        text = (run.preset ?: "").takeIf { it.isNotBlank() } ?: "Run ${run.runId.takeLast(8)}",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
