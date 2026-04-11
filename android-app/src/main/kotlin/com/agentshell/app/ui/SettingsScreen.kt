@@ -37,6 +37,7 @@ fun SettingsScreen(
         )
     ),
 ) {
+    val context = LocalContext.current
     val sandboxEnabled by vm.sandboxEnabled.collectAsState()
     val termuxEnabled by vm.termuxEnabled.collectAsState()
     val sandboxStatus by vm.sandboxStatus.collectAsState()
@@ -185,7 +186,7 @@ fun SettingsScreen(
                         Button(
                             onClick = {
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://f-droid.org/packages/com.termux/"))
-                                LocalContext.current.startActivity(intent)
+                                context.startActivity(intent)
                             },
                             modifier = Modifier.fillMaxWidth(),
                         ) {
