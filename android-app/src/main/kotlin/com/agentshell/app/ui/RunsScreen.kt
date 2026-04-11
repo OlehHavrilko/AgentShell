@@ -70,8 +70,11 @@ fun RunsScreen(
         }
 
         // Filter chips
-        ScrollableRow {
-            RunFilter.entries.forEach { filter ->
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            items(RunFilter.entries.toList()) { filter ->
                 val count = if (filter.status == null) {
                     runs.size
                 } else {
@@ -250,7 +253,7 @@ private fun RunCard(run: RunEntity, onClick: () -> Unit) {
                         val durationMs = end - run.startTime
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
-                                Icons.Filled.Timer,
+                                Icons.Filled.AvTimer,
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,

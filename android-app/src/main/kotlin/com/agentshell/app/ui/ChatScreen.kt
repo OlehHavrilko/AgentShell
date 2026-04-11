@@ -305,7 +305,7 @@ private fun ChatWelcomeState(
                         onClick = { onPromptClick(prompt) },
                         label = { Text(prompt) },
                         leadingIcon = {
-                            Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.AutoFixHigh, contentDescription = null, modifier = Modifier.size(18.dp))
                         },
                     )
                 }

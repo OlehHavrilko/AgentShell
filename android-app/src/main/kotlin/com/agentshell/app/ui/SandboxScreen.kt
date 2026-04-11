@@ -217,7 +217,7 @@ fun SandboxScreen(vm: SandboxViewModel = viewModel(
                             imageVector = when (state) {
                                 is SandboxState.Idle -> Icons.Filled.PowerSettingsNew
                                 is SandboxState.Error -> Icons.Filled.Error
-                                else -> Icons.FilledhourglassEmpty
+                                else -> Icons.Filled.hourglass
                             },
                             contentDescription = null,
                             modifier = Modifier.size(64.dp),

@@ -112,7 +112,7 @@ fun RunDetailScreen(runId: String) {
             // Summary pills
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SummaryPill(
-                    icon = Icons.Filled.Steps,
+                    icon = Icons.Filled.FormatListNumbered,
                     text = "${steps.size} steps",
                 )
                 SummaryPill(
@@ -256,7 +256,7 @@ private fun StepCard(step: StepEntity) {
                 step.endTime?.let {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Filled.Timer,
+                            Icons.Filled.AvTimer,
                             contentDescription = null,
                             modifier = Modifier.size(14.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
