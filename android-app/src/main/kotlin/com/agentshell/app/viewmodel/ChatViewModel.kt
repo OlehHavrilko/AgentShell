@@ -96,25 +96,49 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
     private fun handleIncoming(msg: AgentMessage) {
         when (msg.type) {
             "chat_response" -> {
-                appendMessage("assistant", msg.payload ?: "")
+                // Final response from the agent
+                val content = msg.payload ?: "Task completed"
+                appendMessage("assistant", content)
                 _isLoading.value = false
             }
-            "tool_start" -> appendMessage("tool", "▶ ${msg.payload}")
-            "tool_result" -> appendMessage("tool", "  ${msg.payload}")
-            "tool_error" -> appendMessage("error", "✗ ${msg.payload}")
-            "run_started" -> appendMessage("system", "Run started: ${msg.runId?.takeLast(8)}")
+            "tool_start" -> {
+                // A tool is starting - show to user
+                val toolInfo = msg.payload ?: "Running tool..."
+                appendMessage("tool", "▶ $toolInfo")
+            }
+            "tool_result" -> {
+                // Tool execution completed
+                val result = msg.payload?.take(300) ?: "Tool completed"
+                appendMessage("tool", "  ✓ $result")
+            }
+            "tool_error" -> {
+                // Tool execution failed
+                val error = msg.payload ?: "Tool error occurred"
+                appendMessage("error", "✗ $error")
+            }
+            "run_started" -> {
+                // Run has started
+                val runId = msg.runId?.takeLast(8) ?: "unknown"
+                appendMessage("system", "Run started: $runId")
+            }
             "run_complete" -> {
-                appendMessage("system", "✓ Run ${msg.runId?.takeLast(8)} complete")
+                // Run completed successfully
+                val detail = msg.payload?.take(200)
+                appendMessage("system", "✓ Run complete${detail?.let { ": $it" } ?: ""}")
                 _isLoading.value = false
             }
             "approval_request" -> {
+                // Agent is requesting human approval
                 val parts = msg.payload?.split("|") ?: return
                 if (parts.size >= 2) {
                     _pendingApproval.value = ApprovalBanner(parts[0], parts[1])
+                    _isLoading.value = false
                 }
             }
             "error" -> {
-                appendMessage("error", "Error: ${msg.payload}")
+                // An error occurred
+                val error = msg.payload ?: "An error occurred"
+                appendMessage("error", "Error: $error")
                 _isLoading.value = false
             }
         }
@@ -160,7 +184,12 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
         }
 
         // Service already bound — send via JVM runner
-        svc.startJvmAgent(goal = text, providerId = _selectedProvider.value)
+        try {
+            svc.startJvmAgent(goal = text, providerId = _selectedProvider.value)
+        } catch (e: Exception) {
+            appendMessage("error", "Failed to start agent: ${e.message}")
+            _isLoading.value = false
+        }
     }
 
     fun approve(approvalId: String) {

@@ -58,7 +58,7 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun stopSandbox() {
         val intent = Intent(app, AgentRuntimeService::class.java).apply { action = AgentRuntimeService.ACTION_STOP }
-        app.startService(intent)
+        app.stopService(intent)
         _sandboxStatus.value = "Stopped"
         _sandboxEnabled.value = false
         prefs.edit().putBoolean("sandbox_enabled", false).apply()

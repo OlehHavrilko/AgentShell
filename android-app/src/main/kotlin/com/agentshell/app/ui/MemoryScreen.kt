@@ -21,6 +21,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.agentshell.app.db.AgentDatabase
 import com.agentshell.app.db.AuditEntity
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -36,25 +37,37 @@ class MemoryViewModel(private val db: AgentDatabase) : ViewModel() {
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
+    private var autoRefreshJob: Job? = null
+
     fun onQueryChange(q: String) { _query.value = q }
 
     fun search() {
         val q = _query.value.trim()
+        // Cancel auto-refresh when user explicitly searches
+        autoRefreshJob?.cancel()
         viewModelScope.launch {
             _isSearching.value = true
-            if (q.isBlank()) {
-                db.auditDao().recentEvents(50).first().also { _results.value = it }
-            } else {
-                db.auditDao().searchEvents(q).first().also { _results.value = it }
+            try {
+                if (q.isBlank()) {
+                    _results.value = db.auditDao().recentEvents(50).first()
+                } else {
+                    _results.value = db.auditDao().searchEvents(q).first()
+                }
+            } finally {
+                _isSearching.value = false
             }
-            _isSearching.value = false
         }
     }
 
-    // Load recent events on init
+    // Load recent events on init with auto-refresh
     init {
-        viewModelScope.launch {
-            db.auditDao().recentEvents(50).collect { events -> _results.value = events }
+        autoRefreshJob = viewModelScope.launch {
+            db.auditDao().recentEvents(50).collect { events -> 
+                // Only update if user hasn't performed an explicit search
+                if (_query.value.isBlank()) {
+                    _results.value = events 
+                }
+            }
         }
     }
 

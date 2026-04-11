@@ -35,22 +35,6 @@ class SandboxViewModel(app: Application) : AndroidViewModel(app) {
                 _terminalLines.value = (_terminalLines.value + line).takeLast(500)
             }
         }
-        // Also collect from MCP channel when active
-        viewModelScope.launch {
-            manager.state.collect { state ->
-                if (state is SandboxState.Running) {
-                    manager.activeChannel?.let { channel ->
-                        launch {
-                            channel.receive().collect { msg ->
-                                msg.payload?.let { payload ->
-                                    _terminalLines.value = (_terminalLines.value + payload).takeLast(500)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     fun start() = viewModelScope.launch { manager.start(_currentMode.value) }
@@ -67,7 +51,21 @@ class SandboxViewModel(app: Application) : AndroidViewModel(app) {
 
     fun sendInput(command: String) = viewModelScope.launch {
         _terminalLines.value = _terminalLines.value + "$ $command"
-        proot.exec(command)
+        when (manager.state.value) {
+            is SandboxState.Running -> {
+                val state = manager.state.value as SandboxState.Running
+                when (state.mode) {
+                    SandboxMode.PROOT -> proot.exec(command)
+                    SandboxMode.TERMUX -> {
+                        // Termux doesn't support exec via connector, send via MCP channel
+                        manager.activeChannel?.send(AgentMessage(type = "command", payload = command))
+                    }
+                }
+            }
+            else -> {
+                _terminalLines.value = _terminalLines.value + "[error] Sandbox not running"
+            }
+        }
     }
 
     override fun onCleared() {

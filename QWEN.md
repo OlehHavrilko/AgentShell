@@ -237,3 +237,6 @@ Rule fields: `tool` (exact match), `pattern` (regex on args JSON), `score` (set)
 | `code-review` | `git diff HEAD~1`, analyses changed files, outputs inline review |
 | `git-workflow` | writes conventional-commit message + PR description |
 | `project-scan` | scans for TODOs/FIXMEs, writes `REPORT.md` |
+
+## Qwen Added Memories
+- Git remote: https://github.com/OlehHavrilko/AgentShell.git — authenticated as OlehHavrilko with Personal Access Token (ghp_). Use `git remote set-url origin https://OlehHavrilko:<TOKEN>@github.com/OlehHavrilko/AgentShell.git` before push.

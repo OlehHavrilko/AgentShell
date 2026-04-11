@@ -107,6 +107,16 @@ class AndroidLlmGateway(
     private fun parseResponse(body: String): LlmResponse {
         return runCatching {
             val root = json.parseToJsonElement(body).jsonObject
+            
+            // Check for error response from provider
+            root["error"]?.jsonObject?.let { errorObj ->
+                val errMsg = errorObj["message"]?.jsonPrimitive?.content ?: "Unknown error"
+                return LlmResponse(
+                    content = "LLM Error: $errMsg",
+                    stopReason = LlmResponse.StopReason.ERROR
+                )
+            }
+            
             val choice = root["choices"]?.jsonArray?.getOrNull(0)?.jsonObject
                 ?: return LlmResponse(content = body, stopReason = LlmResponse.StopReason.END_TURN)
             val message = choice["message"]?.jsonObject
@@ -131,6 +141,7 @@ class AndroidLlmGateway(
             val stopReason = when (finishReason) {
                 "tool_calls" -> LlmResponse.StopReason.TOOL_USE
                 "length" -> LlmResponse.StopReason.MAX_TOKENS
+                "stop", "eos" -> LlmResponse.StopReason.END_TURN
                 else -> LlmResponse.StopReason.END_TURN
             }
 
@@ -142,7 +153,10 @@ class AndroidLlmGateway(
                 outputTokens = usage?.get("completion_tokens")?.jsonPrimitive?.intOrNull ?: 0,
             )
         }.getOrElse { e ->
-            LlmResponse(content = "Parse error: ${e.message}", stopReason = LlmResponse.StopReason.ERROR)
+            LlmResponse(
+                content = "Failed to parse LLM response: ${e.message}\nResponse body: ${body.take(200)}",
+                stopReason = LlmResponse.StopReason.ERROR
+            )
         }
     }
 }

@@ -111,10 +111,21 @@ class AgentRuntimeService : Service() {
      * Runs [AgentRunner.executeAgentic] directly on the JVM (no Proot/Termux required).
      * Events are emitted via [_events] so ChatViewModel can observe them.
      */
+    private var isAgentRunning = false
+
     fun startJvmAgent(goal: String, providerId: String) {
+        if (isAgentRunning) {
+            _events.tryEmit(AgentMessage(
+                "error",
+                payload = "An agent is already running. Please wait for it to complete before starting a new task."
+            ))
+            return
+        }
+
         val gateway = buildGateway(providerId) ?: return // buildGateway already emitted an error event
 
         scope.launch(Dispatchers.IO) {
+            isAgentRunning = true
             val stateStore = InMemoryStateStore()
             var runId = "(unknown)"
             val runStartTime = System.currentTimeMillis()
@@ -249,12 +260,23 @@ class AgentRuntimeService : Service() {
                 Log.e(TAG, "JVM agent failed", e)
                 _events.tryEmit(AgentMessage("error", runId, e.message))
             } finally {
+                isAgentRunning = false
                 updateNotification("Agent idle")
             }
         }
     }
 
+    private var isWorkflowRunning = false
+
     fun startWorkflow(workflowJson: String) {
+        if (isWorkflowRunning) {
+            _events.tryEmit(AgentMessage(
+                "error",
+                payload = "A workflow is already running. Please wait for it to complete."
+            ))
+            return
+        }
+
         val steps = runCatching {
             json.decodeFromString<List<WorkflowDraftStep>>(workflowJson)
         }.getOrElse { e ->
@@ -268,6 +290,7 @@ class AgentRuntimeService : Service() {
         }
 
         scope.launch(Dispatchers.IO) {
+            isWorkflowRunning = true
             val stateStore = InMemoryStateStore()
             var runId = "(unknown)"
             val runStartTime = System.currentTimeMillis()
@@ -399,6 +422,7 @@ class AgentRuntimeService : Service() {
                 Log.e(TAG, "Workflow execution failed", e)
                 _events.tryEmit(AgentMessage("error", runId, e.message))
             } finally {
+                isWorkflowRunning = false
                 updateNotification("Agent idle")
             }
         }
