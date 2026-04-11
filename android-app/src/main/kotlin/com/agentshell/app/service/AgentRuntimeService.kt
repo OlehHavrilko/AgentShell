@@ -143,7 +143,6 @@ class AgentRuntimeService : Service() {
 
                     val msg = when (event.eventType) {
                         AuditEventType.RUN_STARTED -> {
-                            onRunId = event.runId
                             runId = event.runId
                             scope.launch {
                                 db.runDao().insert(RunEntity(
