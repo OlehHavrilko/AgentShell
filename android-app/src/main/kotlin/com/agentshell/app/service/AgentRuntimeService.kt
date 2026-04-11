@@ -118,6 +118,8 @@ class AgentRuntimeService : Service() {
             val stateStore = InMemoryStateStore()
             var runId = "(unknown)"
             val runStartTime = System.currentTimeMillis()
+            var stepCount = 0
+            val stepDbIds = mutableMapOf<String, Long>()
 
             // Create the RunEntity in Room BEFORE starting so RunsScreen sees it immediately
             val auditTrail = object : AuditTrail {
