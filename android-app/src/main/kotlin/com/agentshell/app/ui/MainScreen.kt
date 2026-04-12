@@ -6,17 +6,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import com.agentshell.app.R
+import kotlinx.coroutines.launch
 
 sealed class DrawerItem(
     val route: String,
@@ -26,6 +23,7 @@ sealed class DrawerItem(
     object Chat : DrawerItem("chat", "Chat", Icons.Filled.Chat)
     object Runs : DrawerItem("runs", "Runs", Icons.Filled.Assignment)
     object Sandbox : DrawerItem("sandbox", "Sandbox", Icons.Filled.Terminal)
+    object Plugins : DrawerItem("plugins", "Plugins", Icons.Filled.Extension)
     object Settings : DrawerItem("settings", "Settings", Icons.Filled.Settings)
 }
 
@@ -33,6 +31,7 @@ val drawerItems = listOf(
     DrawerItem.Chat,
     DrawerItem.Runs,
     DrawerItem.Sandbox,
+    DrawerItem.Plugins,
     DrawerItem.Settings,
 )
 
@@ -40,9 +39,12 @@ val drawerItems = listOf(
 @Composable
 fun MainScreen() {
     val navController = rememberNavController()
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
     var currentRoute by remember { mutableStateOf(DrawerItem.Chat.route) }
 
     ModalNavigationDrawer(
+        drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet(
                 drawerShape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
@@ -67,7 +69,7 @@ fun MainScreen() {
                     )
                 }
 
-                Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
                 // Navigation items
                 drawerItems.forEach { item ->
@@ -92,6 +94,7 @@ fun MainScreen() {
                             }
                             currentRoute = item.route
                             navController.popBackStack(item.route, inclusive = false)
+                            scope.launch { drawerState.close() }
                         },
                         modifier = Modifier
                             .padding(horizontal = 12.dp, vertical = 4.dp)
@@ -124,7 +127,7 @@ fun MainScreen() {
                                 )
                             },
                             navigationIcon = {
-                                IconButton(onClick = { navController.popBackStack() }) {
+                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
                                     Icon(
                                         imageVector = Icons.Filled.Menu,
                                         contentDescription = "Open menu",
@@ -145,7 +148,7 @@ fun MainScreen() {
                 ) {
                     composable(DrawerItem.Chat.route) {
                         ChatScreen(
-                            onOpenDrawer = { navController.navigate(DrawerItem.Settings.route) }
+                            onOpenDrawer = { scope.launch { drawerState.open() } }
                         )
                     }
                     composable(DrawerItem.Runs.route) {
@@ -156,6 +159,7 @@ fun MainScreen() {
                         )
                     }
                     composable(DrawerItem.Sandbox.route) { SandboxScreen() }
+                    composable(DrawerItem.Plugins.route) { PluginsScreen() }
                     composable(DrawerItem.Settings.route) {
                         SettingsScreen(
                             onNavigateToRuns = { navController.navigate(DrawerItem.Runs.route) },

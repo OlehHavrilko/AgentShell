@@ -67,6 +67,8 @@ class AgentRunner(
         val status: RunStatus,
         val results: List<ToolResult>,
         val finalMessage: String? = null,
+        val inputTokens: Int = 0,
+        val outputTokens: Int = 0,
     )
 
     /**
@@ -123,7 +125,14 @@ class AgentRunner(
                     stateStore.updateStatus(runId, RunStatus.COMPLETED)
                     audit(AuditEvent(AuditEventType.RUN_COMPLETED, runId, detail = "iterations=$iterations"))
                     log.info("Agentic run {} COMPLETED after {} iterations", runId, iterations)
-                    return RunOutcome(runId, RunStatus.COMPLETED, results, finalMessage = response.content)
+                    return RunOutcome(
+                        runId = runId,
+                        status = RunStatus.COMPLETED,
+                        results = results,
+                        finalMessage = response.content,
+                        inputTokens = budget.totalInputTokens,
+                        outputTokens = budget.totalOutputTokens,
+                    )
                 }
 
                 // Append the assistant message with tool calls
@@ -147,7 +156,13 @@ class AgentRunner(
                         stateStore.updateStatus(runId, RunStatus.WAITING_APPROVAL)
                         audit(AuditEvent(AuditEventType.APPROVAL_REQUESTED, runId, stepId = stepId, detail = "approvalId=${approval.approvalId} score=$riskScore"))
                         log.warn("Agentic run {} paused — approval required for {} score={}", runId, tc.toolName, riskScore)
-                        return RunOutcome(runId, RunStatus.WAITING_APPROVAL, results)
+                        return RunOutcome(
+                            runId = runId,
+                            status = RunStatus.WAITING_APPROVAL,
+                            results = results,
+                            inputTokens = budget.totalInputTokens,
+                            outputTokens = budget.totalOutputTokens,
+                        )
                     }
 
                     val call = ToolCall(callId = tc.id, toolName = tc.toolName, argumentsJson = tc.argumentsJson)
@@ -173,13 +188,25 @@ class AgentRunner(
             log.warn("Agentic run {} exceeded maxIterations={}", runId, config.maxIterations)
             stateStore.updateStatus(runId, RunStatus.FAILED)
             audit(AuditEvent(AuditEventType.RUN_FAILED, runId, detail = "maxIterations=${config.maxIterations} exceeded"))
-            return RunOutcome(runId, RunStatus.FAILED, results)
+            return RunOutcome(
+                runId = runId,
+                status = RunStatus.FAILED,
+                results = results,
+                inputTokens = budget.totalInputTokens,
+                outputTokens = budget.totalOutputTokens,
+            )
 
         } catch (e: Exception) {
             log.error("Agentic run {} CRASHED: {}", runId, e.message, e)
             stateStore.updateStatus(runId, RunStatus.CRASHED)
             audit(AuditEvent(AuditEventType.RUN_CRASHED, runId, detail = e.message))
-            return RunOutcome(runId, RunStatus.CRASHED, results)
+            return RunOutcome(
+                runId = runId,
+                status = RunStatus.CRASHED,
+                results = results,
+                inputTokens = budget.totalInputTokens,
+                outputTokens = budget.totalOutputTokens,
+            )
         } finally {
             heartbeat.stop()
         }

@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import com.agentshell.app.utils.SecureProviderSecrets
 
 class AgentShellApp : Application() {
     companion object {
@@ -13,6 +14,12 @@ class AgentShellApp : Application() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        migrateProviderKeysToSecureStorage()
+    }
+
+    private fun migrateProviderKeysToSecureStorage() {
+        val plainPrefs = getSharedPreferences("agentshell", MODE_PRIVATE)
+        SecureProviderSecrets(this).migrateLegacyPlaintext(plainPrefs)
     }
 
     private fun createNotificationChannel() {

@@ -13,6 +13,12 @@ class ContextBudgetManager(
     private var inputTokensUsed: Int = 0
     private var outputTokensUsed: Int = 0
 
+    val totalInputTokens: Int
+        get() = inputTokensUsed
+
+    val totalOutputTokens: Int
+        get() = outputTokensUsed
+
     val availableInputTokens: Int
         get() = (maxInputTokens - reserveForOutput - inputTokensUsed).coerceAtLeast(0)
 

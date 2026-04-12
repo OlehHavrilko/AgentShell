@@ -3,16 +3,62 @@ plugins {
     id("org.jetbrains.kotlin.android")
     kotlin("kapt")
 }
+
+fun propOrEnv(name: String) = providers.gradleProperty(name)
+    .orElse(providers.environmentVariable(name))
+    .orElse(providers.environmentVariable("ORG_GRADLE_PROJECT_$name"))
+
+val releaseStoreFile = propOrEnv("AGENTSHELL_UPLOAD_STORE_FILE")
+val releaseStorePassword = propOrEnv("AGENTSHELL_UPLOAD_STORE_PASSWORD")
+val releaseKeyAlias = propOrEnv("AGENTSHELL_UPLOAD_KEY_ALIAS")
+val releaseKeyPassword = propOrEnv("AGENTSHELL_UPLOAD_KEY_PASSWORD")
+
+val hasReleaseSigning =
+    releaseStoreFile.isPresent &&
+        releaseStorePassword.isPresent &&
+        releaseKeyAlias.isPresent &&
+        releaseKeyPassword.isPresent
+
 android {
     namespace = "com.agentshell.app"
-    compileSdk = 34
+    compileSdk = 35
     defaultConfig {
         applicationId = "com.agentshell.app"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
     }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseStoreFile.get())
+                storePassword = releaseStorePassword.get()
+                keyAlias = releaseKeyAlias.get()
+                keyPassword = releaseKeyPassword.get()
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            // Keep release deterministic across Android/JVM mixed dependencies.
+            // R8 minification can be re-enabled after moving non-Android classes
+            // out of the APK dependency graph.
+            isMinifyEnabled = false
+            isShrinkResources = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
+
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
+
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
     packaging {
@@ -56,4 +102,5 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }

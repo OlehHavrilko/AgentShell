@@ -12,6 +12,7 @@ import androidx.core.app.NotificationCompat
 import com.agentshell.app.AgentShellApp
 import com.agentshell.app.db.*
 import com.agentshell.app.ui.MainActivity
+import com.agentshell.app.utils.SecureProviderSecrets
 import com.agentshell.app.workflow.WorkflowDraftStep
 import dev.agentshell.audit.AuditEvent
 import dev.agentshell.audit.AuditEventType
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "AgentRuntimeService"
 private const val NOTIFICATION_ID = 1
@@ -39,6 +41,29 @@ class AgentRuntimeService : Service() {
     private val _events = MutableSharedFlow<AgentMessage>(replay = 50, extraBufferCapacity = 200)
     private val json = Json { ignoreUnknownKeys = true }
     private val db by lazy { AgentDatabase.getInstance(this) }
+    private val secureSecrets by lazy { SecureProviderSecrets(this) }
+
+    private data class ProviderPricing(
+        val inputPer1kUsd: Double,
+        val outputPer1kUsd: Double,
+    )
+
+    private fun pricingFor(providerId: String): ProviderPricing = when (providerId) {
+        // Approximate baseline pricing, used for UX telemetry only.
+        "openai" -> ProviderPricing(inputPer1kUsd = 0.00015, outputPer1kUsd = 0.0006)
+        "groq" -> ProviderPricing(inputPer1kUsd = 0.0, outputPer1kUsd = 0.0)
+        "deepseek" -> ProviderPricing(inputPer1kUsd = 0.00014, outputPer1kUsd = 0.00028)
+        "mistral" -> ProviderPricing(inputPer1kUsd = 0.0020, outputPer1kUsd = 0.0060)
+        "openrouter" -> ProviderPricing(inputPer1kUsd = 0.0005, outputPer1kUsd = 0.0015)
+        "ollama" -> ProviderPricing(inputPer1kUsd = 0.0, outputPer1kUsd = 0.0)
+        else -> ProviderPricing(inputPer1kUsd = 0.0, outputPer1kUsd = 0.0)
+    }
+
+    private fun estimateTokenCostUsd(providerId: String, inputTokens: Int, outputTokens: Int): Double {
+        val pricing = pricingFor(providerId)
+        return ((inputTokens / 1000.0) * pricing.inputPer1kUsd) +
+            ((outputTokens / 1000.0) * pricing.outputPer1kUsd)
+    }
 
     // Full-featured dispatcher with shell, file, and git executors
     private val toolDispatcher by lazy { ToolDispatcher() }
@@ -111,10 +136,11 @@ class AgentRuntimeService : Service() {
      * Runs [AgentRunner.executeAgentic] directly on the JVM (no Proot/Termux required).
      * Events are emitted via [_events] so ChatViewModel can observe them.
      */
-    private var isAgentRunning = false
+    private val isAgentRunning = AtomicBoolean(false)
+    private var currentAgentJob: Job? = null
 
     fun startJvmAgent(goal: String, providerId: String) {
-        if (isAgentRunning) {
+        if (!isAgentRunning.compareAndSet(false, true)) {
             _events.tryEmit(AgentMessage(
                 "error",
                 payload = "An agent is already running. Please wait for it to complete before starting a new task."
@@ -122,10 +148,13 @@ class AgentRuntimeService : Service() {
             return
         }
 
-        val gateway = buildGateway(providerId) ?: return // buildGateway already emitted an error event
+        val gateway = buildGateway(providerId)
+        if (gateway == null) {
+            isAgentRunning.set(false)
+            return
+        }
 
-        scope.launch(Dispatchers.IO) {
-            isAgentRunning = true
+        currentAgentJob = scope.launch(Dispatchers.IO) {
             val stateStore = InMemoryStateStore()
             var runId = "(unknown)"
             val runStartTime = System.currentTimeMillis()
@@ -254,16 +283,42 @@ class AgentRuntimeService : Service() {
                         maxIterations = 30,
                     )
                 )
+                val estimatedCost = estimateTokenCostUsd(
+                    providerId = providerId,
+                    inputTokens = outcome.inputTokens,
+                    outputTokens = outcome.outputTokens,
+                )
+                scope.launch {
+                    db.runDao().getById(outcome.runId)?.let { run ->
+                        db.runDao().update(run.copy(tokenCost = estimatedCost))
+                    }
+                }
+                _events.tryEmit(
+                    AgentMessage(
+                        "system",
+                        outcome.runId,
+                        "Usage: in=${outcome.inputTokens}, out=${outcome.outputTokens}, est_cost=$${"%.6f".format(estimatedCost)}"
+                    )
+                )
                 val finalMsg = outcome.finalMessage ?: "[Run complete — ${outcome.status}]"
                 _events.tryEmit(AgentMessage("chat_response", outcome.runId, finalMsg))
+            } catch (e: CancellationException) {
+                _events.tryEmit(AgentMessage("error", runId, "Run cancelled by user"))
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "JVM agent failed", e)
                 _events.tryEmit(AgentMessage("error", runId, e.message))
             } finally {
-                isAgentRunning = false
+                isAgentRunning.set(false)
+                currentAgentJob = null
                 updateNotification("Agent idle")
             }
         }
+    }
+
+    fun stopCurrentAgent() {
+        currentAgentJob?.cancel(CancellationException("Cancelled from UI"))
+        _events.tryEmit(AgentMessage("system", payload = "Stopping current run…"))
     }
 
     private var isWorkflowRunning = false
@@ -443,7 +498,7 @@ class AgentRuntimeService : Service() {
 
         return when (providerId) {
             "openai" -> {
-                val key = prefs.getString("prov_apikey_openai", "") ?: ""
+                val key = secureSecrets.getApiKey("openai")
                 if (key.isBlank()) return noKey("OpenAI")
                 AndroidLlmGateway(
                     apiKey = key,
@@ -456,7 +511,7 @@ class AgentRuntimeService : Service() {
                 baseUrl = (prefs.getString("prov_host_ollama", "http://10.0.2.2:11434") ?: "http://10.0.2.2:11434").trimEnd('/') + "/v1",
             )
             "groq" -> {
-                val key = prefs.getString("prov_apikey_groq", "") ?: ""
+                val key = secureSecrets.getApiKey("groq")
                 if (key.isBlank()) return noKey("Groq")
                 AndroidLlmGateway(
                     apiKey = key,
@@ -465,7 +520,7 @@ class AgentRuntimeService : Service() {
                 )
             }
             "deepseek" -> {
-                val key = prefs.getString("prov_apikey_deepseek", "") ?: ""
+                val key = secureSecrets.getApiKey("deepseek")
                 if (key.isBlank()) return noKey("DeepSeek")
                 AndroidLlmGateway(
                     apiKey = key,
@@ -474,7 +529,7 @@ class AgentRuntimeService : Service() {
                 )
             }
             "mistral" -> {
-                val key = prefs.getString("prov_apikey_mistral", "") ?: ""
+                val key = secureSecrets.getApiKey("mistral")
                 if (key.isBlank()) return noKey("Mistral")
                 AndroidLlmGateway(
                     apiKey = key,
@@ -483,7 +538,7 @@ class AgentRuntimeService : Service() {
                 )
             }
             "openrouter" -> {
-                val key = prefs.getString("prov_apikey_openrouter", "") ?: ""
+                val key = secureSecrets.getApiKey("openrouter")
                 if (key.isBlank()) return noKey("OpenRouter")
                 AndroidLlmGateway(
                     apiKey = key,
@@ -529,7 +584,7 @@ class AgentRuntimeService : Service() {
         return NotificationCompat.Builder(this, AgentShellApp.NOTIFICATION_CHANNEL_ID)
             .setContentTitle("AgentShell")
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            .setSmallIcon(com.agentshell.app.R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()

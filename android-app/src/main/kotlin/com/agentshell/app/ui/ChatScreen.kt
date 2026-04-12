@@ -11,13 +11,13 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -52,8 +52,8 @@ fun ChatScreen(
     val isLoading by vm.isLoading.collectAsState()
     val pendingApproval by vm.pendingApproval.collectAsState()
     val selectedProvider by vm.selectedProvider.collectAsState()
-    val serviceConnected by vm.serviceConnected.collectAsState()
     val isProviderReady by vm.isProviderReady.collectAsState()
+    var providerMenuExpanded by remember { mutableStateOf(false) }
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     val selectedProviderInfo = AndroidProviderCatalog.byId(selectedProvider)
@@ -63,6 +63,26 @@ fun ChatScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onOpenDrawer) {
+                Icon(Icons.Filled.Menu, contentDescription = "Open menu")
+            }
+            Text(
+                text = selectedProviderInfo?.displayName ?: "Provider",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            IconButton(onClick = vm::clearMessages, enabled = messages.isNotEmpty()) {
+                Icon(Icons.Filled.DeleteSweep, contentDescription = "Clear chat")
+            }
+        }
+
         // ── Messages area ─────────────────────────────────────────────────
         if (messages.isEmpty()) {
             ChatWelcomeState(
@@ -99,7 +119,7 @@ fun ChatScreen(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    repeat(3) { idx ->
+                                    repeat(3) {
                                         Box(
                                             modifier = Modifier
                                                 .size(8.dp)
@@ -195,18 +215,46 @@ fun ChatScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // Provider selector
-                    Surface(
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.padding(end = 8.dp),
-                    ) {
-                        Text(
-                            text = selectedProviderInfo?.displayName?.take(3)?.uppercase() ?: "???",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Box(modifier = Modifier.padding(end = 8.dp)) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.clickable { providerMenuExpanded = true },
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    text = selectedProviderInfo?.displayName?.take(3)?.uppercase() ?: "???",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                Icon(
+                                    imageVector = Icons.Filled.ArrowDropDown,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = providerMenuExpanded,
+                            onDismissRequest = { providerMenuExpanded = false },
+                        ) {
+                            AndroidProviderCatalog.supported.forEach { provider ->
+                                DropdownMenuItem(
+                                    text = { Text(provider.displayName) },
+                                    onClick = {
+                                        vm.selectProvider(provider.id)
+                                        providerMenuExpanded = false
+                                    },
+                                )
+                            }
+                        }
                     }
 
                     OutlinedTextField(
@@ -221,17 +269,23 @@ fun ChatScreen(
 
                     Spacer(Modifier.width(8.dp))
 
-                    FilledIconButton(
-                        onClick = {
-                            val prompt = inputText.trim()
-                            if (prompt.isNotEmpty()) {
-                                vm.send(prompt)
-                                inputText = ""
-                            }
-                        },
-                        enabled = !isLoading && inputText.isNotBlank(),
-                    ) {
-                        Icon(Icons.Filled.Send, contentDescription = "Send")
+                    if (isLoading) {
+                        FilledIconButton(onClick = vm::stopCurrentRun) {
+                            Icon(Icons.Filled.Stop, contentDescription = "Stop")
+                        }
+                    } else {
+                        FilledIconButton(
+                            onClick = {
+                                val prompt = inputText.trim()
+                                if (prompt.isNotEmpty()) {
+                                    vm.send(prompt)
+                                    inputText = ""
+                                }
+                            },
+                            enabled = inputText.isNotBlank(),
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                        }
                     }
                 }
             }
@@ -321,8 +375,6 @@ fun ChatBubble(msg: ChatMessage) {
     val isSystem = msg.role == "system"
     val isTool = msg.role == "tool"
     val isError = msg.role == "error"
-    val clipboardManager = LocalClipboardManager.current
-
     if (isSystem) {
         Box(
             modifier = Modifier
@@ -507,14 +559,14 @@ private fun buildInlineAnnotatedString(
                 }
                 line.startsWith("- ") || line.startsWith("* ") -> {
                     append("• ")
-                    appendInlineFormatted(line.substring(2), style, defaultColor)
+                    appendInlineFormatted(line.substring(2), defaultColor)
                 }
                 line.matches(Regex("^\\d+\\. .*")) -> {
                     val dotIdx = line.indexOf(". ")
                     append(line.substring(0, dotIdx + 2))
-                    appendInlineFormatted(line.substring(dotIdx + 2), style, defaultColor)
+                    appendInlineFormatted(line.substring(dotIdx + 2), defaultColor)
                 }
-                else -> appendInlineFormatted(line, style, defaultColor)
+                else -> appendInlineFormatted(line, defaultColor)
             }
             if (lineIdx < lines.size - 1) append('\n')
         }
@@ -523,7 +575,6 @@ private fun buildInlineAnnotatedString(
 
 private fun AnnotatedString.Builder.appendInlineFormatted(
     text: String,
-    style: androidx.compose.ui.text.TextStyle,
     defaultColor: Color,
 ) {
     val inlineRegex = Regex("(\\*\\*(.+?)\\*\\*)|(\\*(.+?)\\*)|(`(.+?)`)")

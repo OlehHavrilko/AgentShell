@@ -10,10 +10,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.agentshell.app.db.AgentDatabase
+import com.agentshell.app.db.MessageEntity
 import com.agentshell.app.service.AgentMessage
 import com.agentshell.app.service.AgentRuntimeService
+import com.agentshell.app.utils.SecureProviderSecrets
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -24,6 +26,8 @@ data class ApprovalBanner(val approvalId: String, val impactPreview: String)
 class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private val prefs = app.getSharedPreferences("agentshell", Context.MODE_PRIVATE)
+    private val secureSecrets = SecureProviderSecrets(app)
+    private val db by lazy { AgentDatabase.getInstance(app) }
 
     private val _isProviderReady = MutableStateFlow(checkProviderReady(
         prefs.getString("selected_provider", "ollama") ?: "ollama"
@@ -74,12 +78,18 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     private val prefListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key?.startsWith("prov_apikey_") == true || key == "selected_provider") {
+        if (key?.startsWith("prov_has_apikey_") == true || key == "selected_provider") {
             _isProviderReady.value = checkProviderReady(_selectedProvider.value)
         }
     }
 
     init {
+        viewModelScope.launch {
+            db.messageDao().allMessages().collect { persisted ->
+                _messages.value = persisted.map { ChatMessage(role = it.role, content = it.content) }
+            }
+        }
+
         // Auto-create & connect to service so events are captured from app start
         val intent = Intent(app, AgentRuntimeService::class.java)
         app.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
@@ -146,17 +156,27 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private fun checkProviderReady(id: String): Boolean = when (id) {
         "ollama" -> true
-        else -> prefs.getString("prov_apikey_$id", "")?.isNotBlank() == true
+        else -> secureSecrets.getApiKey(id).isNotBlank() || prefs.getBoolean("prov_has_apikey_$id", false)
     }
 
     private fun appendMessage(role: String, content: String) {
-        _messages.value = _messages.value + ChatMessage(role, content)
+        viewModelScope.launch {
+            db.messageDao().insert(
+                MessageEntity(
+                    role = role,
+                    content = content,
+                    timestamp = System.currentTimeMillis(),
+                )
+            )
+        }
     }
 
     fun clearMessages() {
-        _messages.value = emptyList()
-        _isLoading.value = false
-        _pendingApproval.value = null
+        viewModelScope.launch {
+            db.messageDao().clearAll()
+            _isLoading.value = false
+            _pendingApproval.value = null
+        }
     }
 
     // ── Public API ─────────────────────────────────────────────────────────────
@@ -200,6 +220,12 @@ class ChatViewModel(private val app: Application) : AndroidViewModel(app) {
     fun reject(approvalId: String) {
         _pendingApproval.value = null
         boundService?.send(AgentMessage(type = "reject", payload = approvalId))
+    }
+
+    fun stopCurrentRun() {
+        boundService?.stopCurrentAgent()
+        _isLoading.value = false
+        appendMessage("system", "Stop requested")
     }
 
     fun selectProvider(id: String) {

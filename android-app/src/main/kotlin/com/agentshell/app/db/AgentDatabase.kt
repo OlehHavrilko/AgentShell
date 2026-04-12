@@ -8,8 +8,15 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [RunEntity::class, StepEntity::class, AuditEntity::class, SecretEntity::class],
-    version = 2,
+    entities = [
+        RunEntity::class,
+        StepEntity::class,
+        AuditEntity::class,
+        SecretEntity::class,
+        MemoryEntity::class,
+        MessageEntity::class,
+    ],
+    version = 3,
     exportSchema = false
 )
 abstract class AgentDatabase : RoomDatabase() {
@@ -17,6 +24,8 @@ abstract class AgentDatabase : RoomDatabase() {
     abstract fun stepDao(): StepDao
     abstract fun auditDao(): AuditDao
     abstract fun secretDao(): SecretDao
+    abstract fun memoryDao(): MemoryDao
+    abstract fun messageDao(): MessageDao
 
     companion object {
         @Volatile private var INSTANCE: AgentDatabase? = null
@@ -42,6 +51,33 @@ abstract class AgentDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS memory_entry (
+                        memoryId TEXT NOT NULL,
+                        runId TEXT NOT NULL,
+                        agentId TEXT NOT NULL,
+                        text TEXT NOT NULL,
+                        tags TEXT NOT NULL,
+                        score REAL NOT NULL,
+                        createdAtEpochMs INTEGER NOT NULL,
+                        decayHalfLifeMs INTEGER NOT NULL,
+                        PRIMARY KEY(memoryId)
+                    )"""
+                )
+
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS chat_message (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        role TEXT NOT NULL,
+                        content TEXT NOT NULL,
+                        timestamp INTEGER NOT NULL
+                    )"""
+                )
+            }
+        }
+
         fun getInstance(context: Context): AgentDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -50,6 +86,7 @@ abstract class AgentDatabase : RoomDatabase() {
                     "agentshell.db"
                 )
                     .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_2_3)
                     .build()
                     .also { INSTANCE = it }
             }

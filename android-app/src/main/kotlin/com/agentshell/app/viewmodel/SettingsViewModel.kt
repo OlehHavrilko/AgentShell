@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.agentshell.app.llm.AndroidProviderCatalog
 import com.agentshell.app.service.AgentRuntimeService
+import com.agentshell.app.utils.SecureProviderSecrets
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -25,6 +26,7 @@ data class ProviderUiState(
 
 class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("agentshell", Context.MODE_PRIVATE)
+    private val secureSecrets = SecureProviderSecrets(app)
 
     private val _sandboxEnabled = MutableStateFlow(prefs.getBoolean("sandbox_enabled", false))
     val sandboxEnabled = _sandboxEnabled.asStateFlow()
@@ -99,12 +101,14 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     private fun buildDefaultProviders() = AndroidProviderCatalog.supported.map { provider ->
+        val keyPresent = secureSecrets.getApiKey(provider.id).isNotBlank() ||
+            prefs.getBoolean("prov_has_apikey_${provider.id}", false)
         ProviderUiState(
             id = provider.id,
             displayName = provider.displayName,
             isLocal = provider.isLocal,
             enabled = prefs.getBoolean("prov_enabled_${provider.id}", provider.isLocal),
-            apiKey = if (provider.isLocal) "" else prefs.getString("prov_apikey_${provider.id}", "") ?: "",
+            apiKey = if (provider.isLocal) "" else if (keyPresent) "********" else "",
             model = prefs.getString("prov_model_${provider.id}", provider.defaultModel) ?: provider.defaultModel,
             host = prefs.getString("prov_host_${provider.id}", provider.defaultHost) ?: provider.defaultHost,
         )
@@ -116,13 +120,15 @@ class SettingsViewModel(private val app: Application) : AndroidViewModel(app) {
     }
 
     fun saveProviderConfig(id: String, apiKey: String, model: String, host: String) {
+        val normalizedKey = if (apiKey == "********") secureSecrets.getApiKey(id) else apiKey
+        secureSecrets.setApiKey(id, normalizedKey)
         prefs.edit()
-            .putString("prov_apikey_$id", apiKey)
+            .putBoolean("prov_has_apikey_$id", normalizedKey.isNotBlank())
             .putString("prov_model_$id", model)
             .putString("prov_host_$id", host)
             .apply()
         _providers.value = _providers.value.map {
-            if (it.id == id) it.copy(apiKey = apiKey, model = model, host = host) else it
+            if (it.id == id) it.copy(apiKey = if (normalizedKey.isBlank()) "" else "********", model = model, host = host) else it
         }
     }
 

@@ -8,3 +8,15 @@ __pycache__/
 
 .qwen/
 gha-creds-*.json
+
+# Android local artifacts
+local.properties
+.idea/
+.vscode/
+agent-core/bin/
+
+# Release signing assets
+*.jks
+*.keystore
+android-app/release-keystore.jks
+copilot-session-*.html
