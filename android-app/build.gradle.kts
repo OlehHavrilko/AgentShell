@@ -29,6 +29,7 @@ android {
         versionCode = 1
         versionName = "1.0.0"
     }
+<<<<<<< HEAD
 
     signingConfigs {
         if (hasReleaseSigning) {
@@ -59,7 +60,10 @@ android {
         }
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }
     packaging {
         resources.excludes += setOf(

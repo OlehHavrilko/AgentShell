@@ -240,3 +240,4 @@ Rule fields: `tool` (exact match), `pattern` (regex on args JSON), `score` (set)
 
 ## Qwen Added Memories
 - Git remote: https://github.com/OlehHavrilko/AgentShell.git — authenticated as OlehHavrilko with Personal Access Token (ghp_). Use `git remote set-url origin https://OlehHavrilko:<TOKEN>@github.com/OlehHavrilko/AgentShell.git` before push.
+- GitHub PAT for AgentShell repo: — use for all git operations in /root/AgentShell
