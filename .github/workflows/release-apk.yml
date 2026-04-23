@@ -32,13 +32,14 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Decode signing keystore
+        if: secrets.AGENTSHELL_UPLOAD_STORE_BASE64 != ''
         env:
           AGENTSHELL_UPLOAD_STORE_BASE64: ${{ secrets.AGENTSHELL_UPLOAD_STORE_BASE64 }}
         run: |
-          test -n "$AGENTSHELL_UPLOAD_STORE_BASE64"
           printf '%s' "$AGENTSHELL_UPLOAD_STORE_BASE64" | base64 -d > android-app/release-keystore.jks
 
       - name: Build signed release APK and AAB
+        if: secrets.AGENTSHELL_UPLOAD_STORE_BASE64 != ''
         env:
           AGENTSHELL_UPLOAD_STORE_FILE: android-app/release-keystore.jks
           AGENTSHELL_UPLOAD_STORE_PASSWORD: ${{ secrets.AGENTSHELL_UPLOAD_STORE_PASSWORD }}
@@ -46,14 +47,27 @@ jobs:
           AGENTSHELL_UPLOAD_KEY_PASSWORD: ${{ secrets.AGENTSHELL_UPLOAD_KEY_PASSWORD }}
         run: ./gradlew :android-app:assembleRelease :android-app:bundleRelease --no-daemon
 
+      - name: Build debug APK fallback
+        if: secrets.AGENTSHELL_UPLOAD_STORE_BASE64 == ''
+        run: ./gradlew :android-app:assembleDebug --no-daemon
+
       - name: Upload release APK artifact
+        if: secrets.AGENTSHELL_UPLOAD_STORE_BASE64 != ''
         uses: actions/upload-artifact@v4
         with:
           name: AgentShell-release-apk
           path: android-app/build/outputs/apk/release/*.apk
 
       - name: Upload release AAB artifact
+        if: secrets.AGENTSHELL_UPLOAD_STORE_BASE64 != ''
         uses: actions/upload-artifact@v4
         with:
           name: AgentShell-release-aab
           path: android-app/build/outputs/bundle/release/*.aab
+
+      - name: Upload debug APK artifact
+        if: secrets.AGENTSHELL_UPLOAD_STORE_BASE64 == ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: AgentShell-debug-apk
+          path: android-app/build/outputs/apk/debug/*.apk

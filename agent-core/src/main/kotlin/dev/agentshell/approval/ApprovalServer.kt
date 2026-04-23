@@ -95,7 +95,8 @@ class ApprovalServer(
     }
 
     private fun error(exchange: HttpExchange, code: Int, message: String) {
-        val body = """{"error":${message.replace("\"", "\\\"")}}""".toByteArray()
+        val escaped = message.replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r")
+        val body = """{"error":"$escaped"}""".toByteArray()
         exchange.responseHeaders.add("Content-Type", "application/json")
         exchange.sendResponseHeaders(code, body.size.toLong())
         exchange.responseBody.use { it.write(body) }

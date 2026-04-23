@@ -60,10 +60,26 @@ class DatabaseManager(val dbPath: String) {
         val migrationDir = "db/migrations"
         val result = mutableMapOf<Int, String>()
 
-        // Enumerate classpath resources via manifest listing
         val resourceUrl = loader.getResource(migrationDir) ?: return result
-        val dir = java.io.File(resourceUrl.toURI())
-        if (!dir.exists()) return result
+
+        // Handle classpath resources from JAR files (jar:file:...!/path)
+        if (resourceUrl.protocol == "jar") {
+            val jarPath = resourceUrl.path.substringBefore("!/").removePrefix("file:")
+            val jarFile = java.util.jar.JarFile(java.net.URLDecoder.decode(jarPath, "UTF-8"))
+            jarFile.entries().asSequence().use { entries ->
+                entries.filter { it.name.startsWith("$migrationDir/") && it.name.endsWith(".sql") }
+                    .forEach { entry ->
+                        val name = entry.name
+                        val version = Regex("V(\\d+)__").find(name)?.groupValues?.get(1)?.toIntOrNull() ?: return@forEach
+                        result[version] = jarFile.getInputStream(entry).bufferedReader().readText()
+                    }
+            }
+            return result
+        }
+
+        // Handle filesystem paths
+        val dir = try { java.io.File(resourceUrl.toURI()) } catch (_: Exception) { return result }
+        if (!dir.exists() || !dir.isDirectory) return result
 
         dir.listFiles { f -> f.name.matches(Regex("V\\d+__.*\\.sql")) }
             ?.forEach { file ->

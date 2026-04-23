@@ -151,7 +151,7 @@ fun main(args: Array<String>) {
             ).also { if (it.finalMessage != null) println("\n=== Agent response ===\n${it.finalMessage}\n=====================") }
         }
         RunMode.SCRIPTED -> runner.execute(config.runConfig!!)
-        RunMode.ORCHESTRATE -> error("unreachable")
+        RunMode.ORCHESTRATE -> throw IllegalStateException("ORCHESTRATE mode is handled before this point")
     }
 
     println("Run finished: runId=${outcome.runId} status=${outcome.status} steps=${outcome.results.size}")
