@@ -1,0 +1,26 @@
+# Code owners for AgentShell repository
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+* @OlehHavrilko
+
+# Agent core modules
+/agent-core/src/main/kotlin/dev/agentshell/llm/ @OlehHavrilko
+/agent-core/src/main/kotlin/dev/agentshell/runtime/ @OlehHavrilko
+/agent-core/src/main/kotlin/dev/agentshell/executor/ @OlehHavrilko
+/agent-core/src/main/kotlin/dev/agentshell/security/ @OlehHavrilko
+
+# Android app
+/android-app/ @OlehHavrilko
+
+# Documentation
+/docs/ @OlehHavrilko
+*.md @OlehHavrilko
+
+# CI/CD
+/.github/workflows/ @OlehHavrilko
+
+# Project files
+ROADMAP.md @OlehHavrilko
+PROGRESS.md @OlehHavrilko
+CONTRIBUTING.md @OlehHavrilko

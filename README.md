@@ -1,5 +1,25 @@
 # AgentShell
 
+> **Resume-first, approval-gated agent runtime for safe autonomous tool execution on Android/JVM.**
+
+[![CI](https://github.com/OlehHavrilko/AgentShell/actions/workflows/ci.yml/badge.svg)](https://github.com/OlehHavrilko/AgentShell/actions)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Kotlin](https://img.shields.io/badge/Kotlin-1.9.24-7F52FF)](https://kotlinlang.org/)
+[![Java](https://img.shields.io/badge/Java-21-orange)](https://www.oracle.com/java/)
+[![Status](https://img.shields.io/badge/Status-MVP%20→%20Production-yellow)]([ROADMAP.md](ROADMAP.md))
+
+---
+
+## 📚 Documentation
+
+- **[🚀 Quickstart](README.md#quickstart)** — Get started in 5 minutes
+- **[🛣️ Roadmap](ROADMAP.md)** — Production readiness phases (Phases 1-5)
+- **[📊 Progress](PROGRESS.md)** — Tracking implementation status
+- **[🤝 Contributing](CONTRIBUTING.md)** — How to contribute
+- **[📖 Architecture](QWEN.md)** — Detailed system design
+
+---
+
 ## Multi-module Structure
 
 This is a multi-module Gradle project:
